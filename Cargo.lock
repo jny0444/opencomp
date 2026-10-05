@@ -1464,6 +1464,7 @@ name = "opencomp-llm"
 version = "0.1.0"
 dependencies = [
  "opencomp-core",
+ "tokio",
 ]
 
 [[package]]

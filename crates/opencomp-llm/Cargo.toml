@@ -6,3 +6,7 @@ rust-version.workspace = true
 
 [dependencies]
 opencomp-core.workspace = true
+
+[dev-dependencies]
+opencomp-core.workspace = true
+tokio.workspace = true

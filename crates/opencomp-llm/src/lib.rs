@@ -1,1 +1,3 @@
-//! Model client and tool-call parsing.
+pub mod scripted;
+
+pub use scripted::ScriptedModel;

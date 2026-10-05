@@ -1,5 +1,4 @@
 use opencomp_core::{action::Action, computer::Computer, error::OpenCompCoreError};
-use xcap::Monitor;
 
 use crate::input;
 
