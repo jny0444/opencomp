@@ -53,3 +53,10 @@ tempfile = "3.27.0"
 wiremock = "0.6.5"
 
 leptess = "0.14.0"
+
+opencomp-core = { path = "crates/opencomp-core" }
+opencomp-computer = { path = "crates/opencomp-computer" }
+opencomp-browser = { path = "crates/opencomp-browser" }
+opencomp-llm = { path = "crates/opencomp-llm" }
+opencomp-vision = { path = "crates/opencomp-vision" }
+opencomp-agent = { path = "crates/opencomp-agent" }

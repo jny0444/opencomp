@@ -5,3 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+opencomp-agent.workspace = true
+opencomp-computer.workspace = true
+opencomp-core.workspace = true
+opencomp-llm.workspace = true
