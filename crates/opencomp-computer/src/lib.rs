@@ -1,1 +1,5 @@
-//! Desktop driver: screenshots and mouse/keyboard input.
+pub mod desktop;
+pub mod input;
+pub mod keys;
+
+pub use desktop::Desktop;

@@ -6,3 +6,12 @@ rust-version.workspace = true
 
 [dependencies]
 opencomp-core.workspace = true
+
+xcap.workspace = true
+enigo.workspace = true
+image.workspace = true
+
+[dev-dependencies]
+opencomp-core.workspace = true
+enigo.workspace = true
+tokio.workspace = true
