@@ -1,1 +1,3 @@
-//! Observe, decide, and act loop.
+pub mod agent;
+
+pub use agent::Agent;

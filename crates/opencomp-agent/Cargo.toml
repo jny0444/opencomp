@@ -6,3 +6,10 @@ rust-version.workspace = true
 
 [dependencies]
 opencomp-core.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+opencomp-core.workspace = true
+opencomp-llm.workspace = true
+tokio.workspace = true
+
