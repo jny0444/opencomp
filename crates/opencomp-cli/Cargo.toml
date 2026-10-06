@@ -9,3 +9,6 @@ opencomp-agent.workspace = true
 opencomp-computer.workspace = true
 opencomp-core.workspace = true
 opencomp-llm.workspace = true
+clap.workspace = true
+tokio.workspace = true
+tracing-subscriber.workspace = true
