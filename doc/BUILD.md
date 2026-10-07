@@ -298,6 +298,8 @@ Add `--computer` to the `Run` command in `src/cli.rs`, with values `desktop` (de
 
 ## Step 9 — OCR
 
+Done. `cargo test -p opencomp-vision` passes. `read` writes the PNG to a tempfile, asks Tesseract for one block per word, and returns that word's box in the PNG's pixels. The agent does not call it yet. Scale a block with `to_screen` before using it as a capture pixel. `leptess` needs Tesseract installed.
+
 Do not start this with Step 6. Add it only when a model cannot read the screenshot. No action types change.
 
 Add workspace dep `leptess` to `crates/opencomp-vision`. `leptess` needs Tesseract installed on the machine.

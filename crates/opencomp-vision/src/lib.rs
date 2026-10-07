@@ -1,1 +1,3 @@
-//! Screenshot encoding and coordinate scaling.
+mod ocr;
+
+pub use ocr::{TextBlock, read};
