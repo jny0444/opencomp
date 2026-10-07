@@ -14,6 +14,8 @@ impl Computer for FakeComputer {
             png: vec![0],
             width: 1,
             height: 1,
+            screen_width: 1,
+            screen_height: 1,
         })
     }
 
@@ -92,6 +94,8 @@ async fn model_returns_scripted_actions_then_errors() {
         png: Vec::new(),
         width: 0,
         height: 0,
+        screen_width: 0,
+        screen_height: 0,
     };
 
     let first = model

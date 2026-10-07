@@ -48,12 +48,12 @@ The screenshot passed into `next_action` is the vision prefill. Make it small an
 
 In `opencomp-computer`:
 
+- `Desktop::screenshot` already samples the capture down to a longest side of 1280 and reuses that PNG while a 64×64 sample of the screen is unchanged. `screen_width` and `screen_height` stay the capture size. `act` still converts capture pixels to points with `scale_factor`.
 - Capture the frontmost window when it is available. Fall back to the primary monitor.
-- Keep storing `scale_factor` from that capture. `Desktop::act` still converts pixels to points. Scaling stays out of this crate.
 
-In the CLI, where `BUILD.md` already calls `scale_screenshot(..., 1280)`:
+In the CLI, `observation.png` is already the model image:
 
-- Keep the longest side at 1280. Drop to 1024 if Step 1 shows prefill still dominating and clicks stay accurate.
+- Drop the longest side to 1024 only if Step 1 shows prefill still dominating and clicks stay accurate.
 - Encode JPEG or WebP around quality 75 for the model payload. Keep a PNG only where a crate still requires one.
 - Send the latest frame only. `Model::next_action` already takes one `Observation` plus `&[Action]`. Keep history as text.
 

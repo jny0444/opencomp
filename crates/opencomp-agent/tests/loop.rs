@@ -29,6 +29,8 @@ impl Computer for FakeComputer {
             png: vec![0],
             width: 1,
             height: 1,
+            screen_width: 1,
+            screen_height: 1,
         })
     }
 

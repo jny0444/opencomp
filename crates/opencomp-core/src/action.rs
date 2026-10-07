@@ -37,6 +37,8 @@ pub enum Action {
 
     Drag { from: Point, to: Point },
 
+    Release { point: Point, button: MouseButton },
+
     Type(String),
 
     Key { keys: Vec<Key> },

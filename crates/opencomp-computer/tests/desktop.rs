@@ -12,6 +12,9 @@ async fn screenshot_is_a_png_and_move_near_origin() {
     assert!(observation.png.starts_with(&[0x89, b'P', b'N', b'G']));
     assert!(observation.width > 0);
     assert!(observation.height > 0);
+    assert!(observation.width.max(observation.height) <= 1280);
+    assert!(observation.screen_width >= observation.width);
+    assert!(observation.screen_height >= observation.height);
 
     desktop
         .act(&Action::Move(Point { x: 1, y: 1 }))

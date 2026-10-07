@@ -7,6 +7,11 @@ pub fn script() -> Vec<Action> {
             point: Point { x: 10, y: 10 },
             button: MouseButton::Left,
         },
+        Action::Release {
+            point: Point { x: 10, y: 10 },
+            button: MouseButton::Left,
+        },
+        Action::Move(Point { x: 100, y: 100 }),
         Action::Done {
             result: "demo finished".to_owned(),
         },

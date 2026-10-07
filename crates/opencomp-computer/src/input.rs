@@ -90,6 +90,26 @@ pub(crate) fn drag(
     Ok(())
 }
 
+pub(crate) fn release(
+    enigo: &mut enigo::Enigo,
+    point: Point,
+    button: MouseButton,
+    scale_factor: f32,
+) -> Result<(), OpenCompCoreError> {
+    let (x, y) = to_point(point, scale_factor);
+    let enigo_button = to_button(button);
+
+    enigo
+        .move_mouse(x, y, enigo::Coordinate::Abs)
+        .map_err(|e| OpenCompCoreError::Computer(e.to_string()))?;
+
+    enigo
+        .button(enigo_button, enigo::Direction::Release)
+        .map_err(|e| OpenCompCoreError::Computer(e.to_string()))?;
+
+    Ok(())
+}
+
 pub(crate) fn type_text(enigo: &mut enigo::Enigo, text: &str) -> Result<(), OpenCompCoreError> {
     enigo
         .text(text)

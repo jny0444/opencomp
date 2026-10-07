@@ -82,6 +82,7 @@ Use `enigo::{Axis, Button, Coordinate, Direction, Keyboard, Mouse}`.
 - `Click` and `DoubleClick`: `move_mouse(x, y, Coordinate::Abs)`, then `button(..., Direction::Click)`. Double-click calls `button` twice.
 - `Move`: `move_mouse` only.
 - `Drag`: move to `from`, `button(..., Direction::Press)`, move to `to`, `button(..., Direction::Release)`.
+- `Release`: `move_mouse(x, y, Coordinate::Abs)`, then `button(..., Direction::Release)`.
 - `Type`: `Keyboard::text`.
 - `Key`: `key(..., Direction::Press)` for each key in order, then `key(..., Direction::Release)` in reverse order.
 - `Scroll`: `scroll(dy, Axis::Vertical)` and `scroll(dx, Axis::Horizontal)`. Positive `dy` is down. Positive `dx` is right. Skip an axis whose delta is `0`.
@@ -116,14 +117,15 @@ impl Computer for Desktop {
 
 `screenshot`:
 
-1. `xcap::Monitor::all()`.
+1. `xcap::Monitor::all()` once, then reuse that primary monitor.
 2. Keep the monitor whose `is_primary()` is true. If none is primary, use the first monitor.
 3. `capture_image()`.
-4. Encode with `image.write_to(&mut cursor, image::ImageFormat::Png)`.
-5. Return `Observation { png, width: image.width(), height: image.height() }`.
-6. Store `monitor.scale_factor()` on `self` so the next `act` can convert pixels to points.
+4. Sample the capture down so the longest side is at most 1280. Use nearest-neighbor. This is the image the model sees. Encode that with `PngEncoder::new_with_quality(..., CompressionType::Fast, FilterType::NoFilter)`.
+5. Keep a 64×64 sample of the capture. When the next screenshot has the same sample and the same capture size, return the previous PNG instead of resampling and encoding.
+6. Return `Observation { png, width, height, screen_width, screen_height }`. `width` and `height` are the PNG. `screen_width` and `screen_height` are the capture.
+7. Store `monitor.scale_factor()` on `self`. `act` points are in the capture, and this factor converts those pixels to points.
 
-`width` and `height` are the PNG's pixel size. Map `xcap::XCapError` into `OpenCompCoreError::Computer`.
+Map `xcap::XCapError` into `OpenCompCoreError::Computer`.
 
 `act` matches on `action` and calls `input`. Pass `self.scale_factor` into every call that moves the pointer. `Point` and `MouseButton` are `Clone`, so clone them when the helper takes them by value. `input::wait` returns `()`, so that arm is `Ok(())`.
 
@@ -140,6 +142,12 @@ match action {
         &mut self.enigo,
         from.clone(),
         to.clone(),
+        self.scale_factor,
+    ),
+    Action::Release { point, button } => input::release(
+        &mut self.enigo,
+        point.clone(),
+        button.clone(),
         self.scale_factor,
     ),
     Action::Type(text) => input::type_text(&mut self.enigo, text),
@@ -387,7 +395,7 @@ screen_y = point.y * screen_height / model_height
 
 Use `u64` intermediates so the multiply does not overflow. Clamp to `screen_width - 1` and `screen_height - 1` when those dimensions are non-zero.
 
-`scale_action` clones the action and runs `to_screen` on every point in `Click`, `DoubleClick`, `Move`, and `Drag`. Leave `Type`, `Key`, `Scroll`, `Wait`, and `Done` unchanged.
+`scale_action` clones the action and runs `to_screen` on every point in `Click`, `DoubleClick`, `Move`, `Drag`, and `Release`. Leave `Type`, `Key`, `Scroll`, `Wait`, and `Done` unchanged.
 
 ### `tests/scale.rs`
 
@@ -458,13 +466,10 @@ In `src/main.rs`, for `anthropic`:
 
 1. `dotenvy::dotenv().ok()`.
 2. Read `ANTHROPIC_API_KEY`. Missing key is a startup error.
-3. After each screenshot, call `scale_screenshot(&observation.png, 1280)`.
-4. Build an `Observation` from the scaled PNG and its width and height, and pass that to `next_action`. Keep the original screenshot width and height.
-5. Run `scale_action` on the returned action before `computer.act`, using the scaled size as the model size and the original screenshot size as the screen size.
+3. Pass the screenshot straight to `next_action`. `Desktop` already keeps its PNG at most 1280 on the long side.
+4. Run `scale_action` on the returned action before `computer.act`. The model size is `observation.width` and `observation.height`. The screen size is `observation.screen_width` and `observation.screen_height`.
 
-`Desktop` still receives screen pixels and divides by `scale_factor` itself. Do not scale inside `opencomp-computer`.
-
-The scripted path skips scaling. Its actions are already screen pixels.
+`Desktop::act` still receives capture pixels and divides by `scale_factor` itself. The scripted path skips `scale_action`. Its actions are already capture pixels.
 
 **Done when:** `cargo test -p opencomp-vision` and `cargo test -p opencomp-llm` pass, and a short real task finishes with `Done` with the typed text visible on screen.
 
@@ -487,7 +492,7 @@ Declare `policy` from `src/lib.rs`.
 pub fn check(action: &Action, width: u32, height: u32) -> Result<(), OpenCompCoreError>
 ```
 
-- For every point in `Click`, `DoubleClick`, `Move`, and `Drag`, return `InvalidAction` when `x >= width` or `y >= height`.
+- For every point in `Click`, `DoubleClick`, `Move`, `Drag`, and `Release`, return `InvalidAction` when `x >= width` or `y >= height`.
 - For `Key`, return `InvalidAction` when the chord contains `Super` and `Char('q')` or `Char('Q')`.
 - Allow `Type`, `Scroll`, `Wait`, and `Done`.
 - Allow a `Key` chord that is a single key, or `Super` combined with one of `Char('c')`, `Char('v')`, `Char('a')`, `Char('t')`, `Char('w')`, `Tab`.

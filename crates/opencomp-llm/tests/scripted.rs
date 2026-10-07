@@ -16,6 +16,8 @@ async fn returns_move_type_done_then_errors() {
         png: Vec::new(),
         width: 0,
         height: 0,
+        screen_width: 0,
+        screen_height: 0,
     };
 
     let first = model.next_action("task", &observation, &[]).await.unwrap();

@@ -65,6 +65,17 @@ fn drag_round_trips_through_json() {
 }
 
 #[test]
+fn release_round_trips_through_json() {
+    assert_round_trip(
+        &Action::Release {
+            point: Point { x: 12, y: 24 },
+            button: MouseButton::Left,
+        },
+        r#"{"Release":{"point":{"x":12,"y":24},"button":"Left"}}"#,
+    );
+}
+
+#[test]
 fn type_round_trips_through_json() {
     assert_round_trip(
         &Action::Type("hello".to_owned()),
