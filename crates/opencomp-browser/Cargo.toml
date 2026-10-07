@@ -6,3 +6,9 @@ rust-version.workspace = true
 
 [dependencies]
 opencomp-core.workspace = true
+playwright-rs.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+opencomp-core.workspace = true
+tokio.workspace = true

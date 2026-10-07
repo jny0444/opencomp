@@ -15,5 +15,7 @@ pub enum Command {
         model: String,
         #[arg(long, default_value_t = 25)]
         max_steps: usize,
+        #[arg(long, default_value = "desktop")]
+        computer: String,
     },
 }

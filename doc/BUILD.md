@@ -217,6 +217,8 @@ The scripted path uses the same `run`. Its demo points are PNG pixels, and `run`
 
 ## Step 7 — Safety limits
 
+Done. `cargo test -p opencomp-agent` passes, including the out-of-bounds point test.
+
 Follow this before longer tasks. No new dependencies.
 
 Create these files:
@@ -253,6 +255,12 @@ A `Super` + `Char('q')` chord is refused. A left click inside the screenshot is 
 **Done when:** `cargo test -p opencomp-agent` passes, including the out-of-bounds point test.
 
 ## Step 8 — Browser
+
+Done. `opencomp-cli` accepts `--computer desktop` (default) and `--computer browser`. `tests/session.rs` is `#[ignore]` and is the manual check that a real page screenshot is a non-empty PNG. Run it when Playwright's browsers are installed:
+
+```text
+cargo test -p opencomp-browser -- --ignored
+```
 
 Follow this only after a desktop task succeeds with a real model.
 
@@ -327,4 +335,4 @@ The agent does not call `read` until you decide the model needs the text. When y
 - `opencomp run --model scripted` finishes on a machine with no API key.
 - `opencomp run --model anthropic` completes one desktop task you can see.
 - A point outside the model image is refused.
-- `opencomp-browser` is still unused by the CLI until Step 8.
+- `--computer browser` runs the same agent against a Playwright page. `--computer desktop` stays the default.

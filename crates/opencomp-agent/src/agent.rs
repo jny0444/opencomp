@@ -1,5 +1,7 @@
 use opencomp_core::{action::Action, computer::Computer, error::OpenCompCoreError, model::Model};
 
+use crate::policy;
+
 pub struct Agent<C, M> {
     computer: C,
     model: M,
@@ -40,6 +42,17 @@ impl<C: Computer, M: Model> Agent<C, M> {
             match turn.action {
                 Action::Done { result } => return Ok(result),
                 action => {
+                    if let Err(error) =
+                        policy::check(&action, observation.width, observation.height)
+                    {
+                        tracing::warn!(
+                            step = history.len() + 1,
+                            action = ?action,
+                            %error,
+                            "refused action"
+                        );
+                        return Err(error);
+                    }
                     history.push(action.clone());
                     let scaled = opencomp_core::scale::scale_action(
                         &action,
