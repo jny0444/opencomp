@@ -40,8 +40,15 @@ impl<C: Computer, M: Model> Agent<C, M> {
             match turn.action {
                 Action::Done { result } => return Ok(result),
                 action => {
-                    self.computer.act(&action).await?;
-                    history.push(action);
+                    history.push(action.clone());
+                    let scaled = opencomp_core::scale::scale_action(
+                        &action,
+                        observation.width,
+                        observation.height,
+                        observation.screen_width,
+                        observation.screen_height,
+                    );
+                    self.computer.act(&scaled).await?;
                 }
             }
         }

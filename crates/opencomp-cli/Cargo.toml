@@ -12,3 +12,4 @@ opencomp-llm.workspace = true
 clap.workspace = true
 tokio.workspace = true
 tracing-subscriber.workspace = true
+dotenvy.workspace = true

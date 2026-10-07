@@ -4,7 +4,7 @@ Follow the steps in order. Each step ends with a check that must pass before the
 
 The first finished version is a desktop agent: it screenshots the main display, asks a model for one action, performs that action, and repeats until the model says it is done or a step limit is hit. Browser control and OCR come after that loop works on a real screen.
 
-`opencomp-core` is done. Start at Step 2.
+Steps 1–6 are done. Start at Step 7.
 
 ## Crate map
 
@@ -13,10 +13,10 @@ The first finished version is a desktop agent: it screenshots the main display, 
 | `opencomp-core` | library | nothing in this workspace | Actions, observations, errors, `Computer` and `Model` traits |
 | `opencomp-computer` | library | `opencomp-core` | Screenshots (`xcap`) and mouse/keyboard (`enigo`) |
 | `opencomp-llm` | library | `opencomp-core` | Turns a task and a screenshot into the next action |
-| `opencomp-vision` | library | `opencomp-core` | Resize screenshots and map model coordinates back to screen pixels |
+| `opencomp-vision` | library | `opencomp-core` | Empty until Step 9. Desktop screenshots are already resized |
 | `opencomp-agent` | library | `opencomp-core` | The observe → decide → act loop |
 | `opencomp-cli` | binary | `opencomp-core`, `opencomp-agent`, `opencomp-computer`, `opencomp-llm` | Wires concrete drivers and runs a task |
-| `opencomp-browser` | library | `opencomp-core` | Leave empty until the desktop loop works |
+| `opencomp-browser` | library | `opencomp-core` | Leave empty until the desktop loop works with a real model |
 
 `opencomp-agent` depends only on `opencomp-core`. The CLI chooses the computer and the model. That keeps the loop testable without a display or an API key.
 
@@ -28,345 +28,82 @@ The error type in `opencomp-core` is `opencomp_core::error::OpenCompCoreError`. 
 
 ## Step 1 — Shared types
 
-Done. Leave these files alone unless a later step says to add one:
+Done.
 
-```text
-crates/opencomp-core/src/lib.rs
-crates/opencomp-core/src/action.rs
-crates/opencomp-core/src/observation.rs
-crates/opencomp-core/src/computer.rs
-crates/opencomp-core/src/model.rs
-crates/opencomp-core/src/error.rs
-crates/opencomp-core/tests/action.rs
-crates/opencomp-core/tests/error.rs
-crates/opencomp-core/tests/traits.rs
+`Action` includes `Release { point, button }` along with click, double-click, move, drag, type, key, scroll, wait, and done. `Action::Wait` stores `millis: u64`. `Done` is a signal to the agent. The computer driver must not perform it.
+
+`Observation` is the model image plus the capture size:
+
+```rust
+pub struct Observation {
+    pub png: Vec<u8>,
+    pub width: u32,
+    pub height: u32,
+    pub screen_width: u32,
+    pub screen_height: u32,
+}
 ```
 
-`Action::Wait` stores `millis: u64`. `Done` is a signal to the agent. The computer driver must not perform it.
+`width` and `height` are the PNG. `screen_width` and `screen_height` are the captured screen. `Desktop::act` points are in that capture.
 
 ## Step 2 — Desktop driver
 
-`crates/opencomp-computer/Cargo.toml` already depends on `opencomp-core`, `xcap`, `enigo`, and `image`. No new dependencies.
-
-Create these files:
-
-```text
-crates/opencomp-computer/src/lib.rs
-crates/opencomp-computer/src/desktop.rs
-crates/opencomp-computer/src/input.rs
-crates/opencomp-computer/src/keys.rs
-crates/opencomp-computer/tests/keys.rs
-crates/opencomp-computer/tests/desktop.rs
-```
-
-### `src/lib.rs`
-
-Declare `desktop`, `input`, and `keys`. Re-export `Desktop`.
-
-### `src/keys.rs`
-
-One function:
-
-```rust
-pub fn to_enigo(key: opencomp_core::action::Key) -> enigo::Key
-```
-
-Map `Enter` to `enigo::Key::Return`, `Super` to `enigo::Key::Meta`, and `Char(c)` to `enigo::Key::Unicode(c)`. `Escape`, `Tab`, `Backspace`, `Delete`, `Alt`, `Control`, and `Shift` use the enigo variants with the same names.
-
-### `src/input.rs`
-
-Functions that take `&mut enigo::Enigo` and perform one action. `desktop.rs` calls them. Keep `xcap` out of this file.
-
-Use `enigo::{Axis, Button, Coordinate, Direction, Keyboard, Mouse}`.
-
-- `Click` and `DoubleClick`: `move_mouse(x, y, Coordinate::Abs)`, then `button(..., Direction::Click)`. Double-click calls `button` twice.
-- `Move`: `move_mouse` only.
-- `Drag`: move to `from`, `button(..., Direction::Press)`, move to `to`, `button(..., Direction::Release)`.
-- `Release`: `move_mouse(x, y, Coordinate::Abs)`, then `button(..., Direction::Release)`.
-- `Type`: `Keyboard::text`.
-- `Key`: `key(..., Direction::Press)` for each key in order, then `key(..., Direction::Release)` in reverse order.
-- `Scroll`: `scroll(dy, Axis::Vertical)` and `scroll(dx, Axis::Horizontal)`. Positive `dy` is down. Positive `dx` is right. Skip an axis whose delta is `0`.
-- `Wait`: `std::thread::sleep(Duration::from_millis(millis))`.
-- `Done` has no function here. `Desktop::act` returns `OpenCompCoreError::InvalidAction` and does not call enigo.
-
-Map `opencomp_core::action::MouseButton` to `enigo::Button` here.
-
-`enigo` on macOS posts Core Graphics points. `xcap` captures physical pixels. On a Retina display those differ by `Monitor::scale_factor()` (usually `2.0`). Divide `x` and `y` by that factor before `move_mouse`. Pass the factor into these functions from `Desktop`. When the factor is `1.0`, the coordinates pass through unchanged.
-
-Turn enigo's `InputError` into `OpenCompCoreError::Computer` with `to_string()`.
-
-### `src/desktop.rs`
-
-```rust
-pub struct Desktop {
-    enigo: enigo::Enigo,
-    scale_factor: f32,
-}
-
-impl Desktop {
-    pub fn new() -> Result<Self, OpenCompCoreError>
-}
-
-impl Computer for Desktop {
-    async fn screenshot(&mut self) -> Result<Observation, OpenCompCoreError>;
-    async fn act(&mut self, action: &Action) -> Result<(), OpenCompCoreError>;
-}
-```
-
-`new` builds `Enigo::new(&enigo::Settings::default())`.
-
-`screenshot`:
-
-1. `xcap::Monitor::all()` once, then reuse that primary monitor.
-2. Keep the monitor whose `is_primary()` is true. If none is primary, use the first monitor.
-3. `capture_image()`.
-4. Sample the capture down so the longest side is at most 1280. Use nearest-neighbor. This is the image the model sees. Encode that with `PngEncoder::new_with_quality(..., CompressionType::Fast, FilterType::NoFilter)`.
-5. Keep a 64×64 sample of the capture. When the next screenshot has the same sample and the same capture size, return the previous PNG instead of resampling and encoding.
-6. Return `Observation { png, width, height, screen_width, screen_height }`. `width` and `height` are the PNG. `screen_width` and `screen_height` are the capture.
-7. Store `monitor.scale_factor()` on `self`. `act` points are in the capture, and this factor converts those pixels to points.
-
-Map `xcap::XCapError` into `OpenCompCoreError::Computer`.
-
-`act` matches on `action` and calls `input`. Pass `self.scale_factor` into every call that moves the pointer. `Point` and `MouseButton` are `Clone`, so clone them when the helper takes them by value. `input::wait` returns `()`, so that arm is `Ok(())`.
-
-```rust
-match action {
-    Action::Click { point, button } => {
-        input::click(&mut self.enigo, point.clone(), button.clone(), self.scale_factor)
-    }
-    Action::DoubleClick(point) => {
-        input::double_click(&mut self.enigo, point.clone(), self.scale_factor)
-    }
-    Action::Move(point) => input::move_to(&mut self.enigo, point.clone(), self.scale_factor),
-    Action::Drag { from, to } => input::drag(
-        &mut self.enigo,
-        from.clone(),
-        to.clone(),
-        self.scale_factor,
-    ),
-    Action::Release { point, button } => input::release(
-        &mut self.enigo,
-        point.clone(),
-        button.clone(),
-        self.scale_factor,
-    ),
-    Action::Type(text) => input::type_text(&mut self.enigo, text),
-    Action::Key { keys } => input::press_keys(&mut self.enigo, keys),
-    Action::Scroll { dx, dy } => input::scroll(&mut self.enigo, *dx, *dy),
-    Action::Wait { millis } => {
-        input::wait(*millis);
-        Ok(())
-    }
-    Action::Done { .. } => Err(OpenCompCoreError::InvalidAction(
-        "done is not a computer action".to_owned(),
-    )),
-}
-```
-
-`Done` is the agent's stop signal. The same message is what `opencomp-core`'s trait test expects from a computer that is asked to perform it.
-
-### Tests
-
-`tests/keys.rs` is a normal unit test. Assert `Super` becomes `Meta`, `Enter` becomes `Return`, and `Char('a')` becomes `Unicode('a')`. This test does not move the mouse.
-
-`tests/desktop.rs` is `#[ignore]`. It constructs `Desktop`, asserts the PNG is non-empty and `width` and `height` are non-zero, then `act`s a `Move` to a point near the origin. Run it with:
+Done. `cargo test -p opencomp-computer` passes. `tests/desktop.rs` is `#[ignore]` and is the manual check that a real screenshot is a PNG whose long side is at most 1280 and that a `Move` near the origin runs. Run it from a terminal that has Screen Recording and Accessibility:
 
 ```text
 cargo test -p opencomp-computer -- --ignored
 ```
 
-Run that from a terminal that has Screen Recording and Accessibility.
+What landed:
 
-**Done when:** `cargo test -p opencomp-computer` passes, and the ignored test captures a PNG and moves the mouse.
+- `keys::to_enigo` maps `Enter` to `Return`, `Super` to `Meta`, and `Char(c)` to `Unicode(c)`.
+- `input` performs every action except `Done`. Pointer actions divide by `scale_factor` before `move_mouse`. `Release` moves, then sends `Direction::Release`.
+- `Desktop::act` returns `OpenCompCoreError::InvalidAction("done is not a computer action")` for `Done`.
+- `screenshot` keeps the primary monitor. If none is primary, it returns `OpenCompCoreError::Computer`. It does not fall back to the first monitor.
+- The PNG is a nearest-neighbor sample of the capture, longest side at most 1280, stored as opaque RGB with fast compression and a Sub filter. A 64×64 sample of the capture is cached; an unchanged screen returns the previous PNG.
+- `scale_factor` stays the monitor scale. `act` still receives capture pixels, not PNG pixels.
 
 ## Step 3 — Scripted model
 
-No HTTP. Add no dependencies beyond `opencomp-core`.
+Done. `cargo test -p opencomp-llm` passes.
 
-Create these files:
-
-```text
-crates/opencomp-llm/src/lib.rs
-crates/opencomp-llm/src/scripted.rs
-crates/opencomp-llm/tests/scripted.rs
-```
-
-### `src/lib.rs`
-
-Declare `scripted` and re-export `ScriptedModel`.
-
-### `src/scripted.rs`
-
-```rust
-pub struct ScriptedModel {
-    actions: Vec<Action>,
-}
-
-impl ScriptedModel {
-    pub fn new(actions: Vec<Action>) -> Self
-}
-
-impl Model for ScriptedModel {
-    async fn next_action(...) -> Result<Turn, OpenCompCoreError>;
-}
-```
-
-Store the actions front-to-back. Each call removes the next one with `remove(0)` and returns it as `Turn { action, reasoning: None }`. Ignore `task`, `observation`, and `history`. When the vec is empty, return `OpenCompCoreError::Model`.
-
-The last action in the vec the CLI passes should be `Done`. This type does not add `Done` itself.
-
-### `tests/scripted.rs`
-
-Build a model with `Move`, `Type`, and `Done`. Assert the third `next_action` is that `Done`. Assert the fourth call is `OpenCompCoreError::Model`. Use `tokio` as a dev-dependency and `#[tokio::test]`, the same way `opencomp-core` tests the traits.
-
-**Done when:** `cargo test -p opencomp-llm` passes.
+`ScriptedModel::new` stores actions front-to-back. Each `next_action` returns `remove(0)` as `Turn { action, reasoning: None }`. An empty vec is `OpenCompCoreError::Model("no scripted action left")`. It does not append `Done`.
 
 ## Step 4 — Agent loop
 
-Add workspace dep `tracing` to `crates/opencomp-agent/Cargo.toml`. The test crate also needs `tokio` under `[dev-dependencies]`.
+Done. `cargo test -p opencomp-agent` passes without a display or an API key.
 
-Create these files:
+`Agent::run` screenshots, asks the model, logs the step starting at 1, and either returns `Done`'s result or calls `act` and pushes the action. `history.len() == max_steps` before `Done` returns `OpenCompCoreError::Model` with `step limit of {n} was hit`. The fake computer records every `act` and does not special-case `Done`.
 
-```text
-crates/opencomp-agent/src/lib.rs
-crates/opencomp-agent/src/agent.rs
-crates/opencomp-agent/tests/loop.rs
-```
-
-### `src/lib.rs`
-
-Declare `agent` and re-export `Agent`.
-
-### `src/agent.rs`
-
-```rust
-pub struct Agent<C, M> {
-    computer: C,
-    model: M,
-    max_steps: usize,
-}
-
-impl<C, M> Agent<C, M> {
-    pub fn new(computer: C, model: M, max_steps: usize) -> Self
-}
-
-impl<C: Computer, M: Model> Agent<C, M> {
-    pub async fn run(&mut self, task: &str) -> Result<String, OpenCompCoreError>
-}
-```
-
-`run` keeps a `Vec<Action>` named `history`. Each step:
-
-1. `computer.screenshot()`.
-2. `model.next_action(task, &observation, &history)`.
-3. `tracing::info!` the step number (starting at 1) and the action.
-4. On `Done { result }`, return `result`. Do not call `computer.act` and do not push `Done`.
-5. Otherwise `computer.act(&action)`, push a clone of the action, and continue.
-6. If `history.len()` reaches `max_steps` before `Done`, return `OpenCompCoreError::Model` with a message that the step limit was hit.
-
-The CLI passes `25`. Tests pass a small limit.
-
-### `tests/loop.rs`
-
-Define a `FakeComputer` in this file. It returns a 1×1 PNG and pushes every `act` into a `Vec<Action>`. It must not special-case `Done`; the agent is what skips `Done`.
-
-Use `ScriptedModel` from `opencomp-llm`. That means `opencomp-agent`'s dev-dependencies include `opencomp-llm` and `tokio`. The library dependency stays `opencomp-core` only.
-
-Two tests:
-
-- Script `Click` then `Done`. `run` returns the `Done` result. The fake computer recorded one click.
-- Script a single `Click` and set `max_steps` to 1. `run` returns `OpenCompCoreError::Model`. The fake computer recorded one click.
-
-**Done when:** `cargo test -p opencomp-agent` passes without a display or an API key.
+`run` does not scale coordinates yet. Scripted points are capture pixels. Step 6 changes that.
 
 ## Step 5 — CLI
 
-Add workspace deps `clap`, `tokio`, and `tracing-subscriber` to `crates/opencomp-cli/Cargo.toml`. `opencomp-core`, `opencomp-agent`, `opencomp-computer`, and `opencomp-llm` are already dependencies.
+Done. The code matches this step.
 
-Create these files. `src/main.rs` already exists; replace it.
+`opencomp-cli run --task ... --model scripted` builds `Desktop`, `ScriptedModel::new(demo::script())`, and `Agent` with `--max-steps` defaulting to 25. Any other `--model` exits with an error. The result is printed to stdout. Errors go to stderr with a non-zero status.
 
-```text
-crates/opencomp-cli/src/main.rs
-crates/opencomp-cli/src/cli.rs
-crates/opencomp-cli/src/demo.rs
-```
+`demo::script` is a move, a click, a release, another move, and `Done`. Those points are capture pixels until Step 6.
 
-### `src/cli.rs`
-
-A clap parser:
-
-```rust
-#[derive(Parser)]
-pub struct Cli {
-    #[command(subcommand)]
-    pub command: Command,
-}
-
-pub enum Command {
-    Run {
-        #[arg(long)]
-        task: String,
-        #[arg(long, default_value = "scripted")]
-        model: String,
-        #[arg(long, default_value_t = 25)]
-        max_steps: usize,
-    },
-}
-```
-
-Reject any `--model` value other than `scripted` with a clear error. The anthropic value arrives in Step 6.
-
-### `src/demo.rs`
-
-```rust
-pub fn script() -> Vec<Action>
-```
-
-Return a short list you can edit while testing, ending in `Done { result }`. A move, a click, and `Done` is enough. This list is what `--model scripted` runs, so keep it harmless.
-
-### `src/main.rs`
-
-`#[tokio::main]`.
-
-1. Parse `Cli`.
-2. Install a `tracing_subscriber` fmt subscriber with `EnvFilter`. Default the filter to `info`.
-3. Build `Desktop::new()`, `ScriptedModel::new(demo::script())`, and `Agent::new(..., max_steps)`.
-4. `agent.run(&task).await`.
-5. Print the result string to stdout. Print the error to stderr and exit with a non-zero status on failure.
-
-**Done when:** `cargo run -p opencomp-cli -- run --task "demo" --model scripted` captures the screen, performs the demo actions, and prints the `Done` result.
-
-## Step 6 — Real model and coordinate scaling
-
-Do this only after Step 5 runs on your machine.
-
-### Vision
-
-Add workspace deps `image` and `base64` to `crates/opencomp-vision/Cargo.toml`. Tests need `image` as a dev-dependency too.
-
-Create these files:
+Confirm on a machine with Screen Recording and Accessibility:
 
 ```text
-crates/opencomp-vision/src/lib.rs
-crates/opencomp-vision/src/scale.rs
-crates/opencomp-vision/tests/scale.rs
+cargo run -p opencomp-cli -- run --task "demo" --model scripted
 ```
 
-### `src/lib.rs`
+## Step 6 — Real model and coordinate mapping
 
-Declare `scale` and re-export `scale_screenshot`, `to_screen`, and `scale_action`.
+Done. `cargo test -p opencomp-core`, `cargo test -p opencomp-llm`, and `cargo test -p opencomp-agent` pass. A real Anthropic task still has to be run on your machine.
 
-### `src/scale.rs`
+Do not add a second resize. `Desktop::screenshot` already returns a PNG whose longest side is at most 1280. `scale_screenshot` would shrink that image again and send the model the wrong coordinate space. Leave `opencomp-vision` empty until Step 9.
+
+Do not scale in `main` around `agent.run`. `Agent::run` calls `computer.act` itself, so `main` never sees the action. Map coordinates inside `run`.
+
+### Mapping
+
+Add these to `opencomp-core`. They are integer arithmetic. They do not need the `image` crate, so `opencomp-agent` can call them and still depend only on `opencomp-core`.
 
 ```rust
-pub struct ScaledImage {
-    pub png: Vec<u8>,
-    pub width: u32,
-    pub height: u32,
-}
-
-pub fn scale_screenshot(png: &[u8], max_width: u32) -> Result<ScaledImage, OpenCompCoreError>
-
 pub fn to_screen(
     point: Point,
     model_width: u32,
@@ -384,22 +121,28 @@ pub fn scale_action(
 ) -> Action
 ```
 
-`scale_screenshot` decodes the PNG, shrinks it so the longest side is at most `max_width`, and keeps the aspect ratio. If the image is already smaller, return it unchanged. Re-encode as PNG. `width` and `height` are the size the model will see.
-
-`to_screen` maps a point in that resized image onto the screenshot's pixel size:
-
 ```text
 screen_x = point.x * screen_width / model_width
 screen_y = point.y * screen_height / model_height
 ```
 
-Use `u64` intermediates so the multiply does not overflow. Clamp to `screen_width - 1` and `screen_height - 1` when those dimensions are non-zero.
+Use `u64` intermediates so the multiply does not overflow. Clamp to `screen_width - 1` and `screen_height - 1` when those dimensions are non-zero. When `model_width` or `model_height` is `0`, return the point unchanged.
 
 `scale_action` clones the action and runs `to_screen` on every point in `Click`, `DoubleClick`, `Move`, `Drag`, and `Release`. Leave `Type`, `Key`, `Scroll`, `Wait`, and `Done` unchanged.
 
-### `tests/scale.rs`
+In `Agent::run`, after `next_action` and after the `Done` check:
 
-Build a solid image with the `image` crate, encode it to PNG, and scale it to half the width. Assert the returned size. A point at the bottom-right of that half-size image must land on the bottom-right pixel of the original size. A `Type` action must come back unchanged from `scale_action`.
+1. Push a clone of the model action onto `history`. That clone stays in PNG pixels, which is the space the next prompt must describe.
+2. `scale_action` from `observation.width` / `observation.height` to `observation.screen_width` / `observation.screen_height`.
+3. `computer.act` the scaled action.
+
+The fake computer in `tests/loop.rs` uses a 1×1 image whose screen size equals the PNG size, so the map is a no-op and the existing tests stay valid.
+
+`demo::script` must use PNG pixels too, the same space Anthropic will use. Points near the origin can stay near the origin. They are no longer raw capture pixels.
+
+### Tests
+
+In `opencomp-core`, a point at the bottom-right of a half-size image lands on the bottom-right pixel of the full size. A `Type` action comes back unchanged from `scale_action`.
 
 ### Model client
 
@@ -425,10 +168,8 @@ The string tells the model:
 
 - The task text.
 - The image is `image_width` by `image_height`.
-- Coordinates in the action are in that image, not the raw screen.
-- The reply is one JSON value matching `Action`, with no markdown fence.
-
-Include one JSON example taken from `crates/opencomp-core/tests/action.rs`, such as the left-click object.
+- Coordinates in the action are in that image, not `screen_width` by `screen_height`.
+- The reply is one JSON value matching `Action`, with no markdown fence. List every `Action` shape. A task that moves and then stops is `Move` on this reply and `Done` on a later reply. Do not invent names.
 
 ### `src/anthropic.rs`
 
@@ -450,7 +191,7 @@ impl Model for AnthropicModel {
 
 `next_action` sends the instruction, the PNG as a base64 image, and the action history. Parse the response text with `serde_json::from_str::<Action>`. On success return `Turn { action, reasoning: None }`. On HTTP failure or JSON failure return `OpenCompCoreError::Model`.
 
-The screenshot passed into `next_action` is already the scaled image. This crate does not call `opencomp-vision`. Scaling stays in the CLI so `opencomp-llm` does not depend on `opencomp-vision`.
+Pass `observation.png` through unchanged. This crate does not resize it.
 
 ### `tests/anthropic.rs`
 
@@ -458,24 +199,25 @@ Use `wiremock` to stand up a fake Anthropic response whose text is `{"Done":{"re
 
 ### CLI changes
 
-Add `dotenvy` and `opencomp-vision` to `opencomp-cli`.
+Add `dotenvy` to `opencomp-cli`. Do not add `opencomp-vision` for this step.
 
-In `src/cli.rs`, accept `--model anthropic` as well as `scripted`.
+In `src/cli.rs`, accept `--model anthropic`, `groq`, and `openrouter` as well as `scripted`.
 
-In `src/main.rs`, for `anthropic`:
+In `src/main.rs`:
 
-1. `dotenvy::dotenv().ok()`.
-2. Read `ANTHROPIC_API_KEY`. Missing key is a startup error.
-3. Pass the screenshot straight to `next_action`. `Desktop` already keeps its PNG at most 1280 on the long side.
-4. Run `scale_action` on the returned action before `computer.act`. The model size is `observation.width` and `observation.height`. The screen size is `observation.screen_width` and `observation.screen_height`.
+1. `dotenvy::dotenv().ok()` for every provider.
+2. `anthropic` reads `ANTHROPIC_API_KEY` and optional `ANTHROPIC_MODEL` (default `claude-sonnet-4-5`).
+3. `groq` reads `GROQ_API_KEY` and optional `GROQ_MODEL` (default `qwen/qwen3.8-27b`, which can see images) and calls the Groq chat completions API.
+4. `openrouter` reads `OPENROUTER_API_KEY` and optional `OPENROUTER_MODEL` (default `qwen/qwen3.8-27b`).
+5. A missing key is a startup error. `Agent::run` scales the action before `act`. Anthropic receives `observation.png`. Groq and OpenRouter re-encode that PNG as JPEG, starting at quality 75 and stepping down to 60 and 45 while the file is over 700KB, because OpenRouter rejects the uncompressed PNG with HTTP 413. The JPEG keeps the PNG's width and height.
 
-`Desktop::act` still receives capture pixels and divides by `scale_factor` itself. The scripted path skips `scale_action`. Its actions are already capture pixels.
+The scripted path uses the same `run`. Its demo points are PNG pixels, and `run` scales those too.
 
-**Done when:** `cargo test -p opencomp-vision` and `cargo test -p opencomp-llm` pass, and a short real task finishes with `Done` with the typed text visible on screen.
+**Done when:** `cargo test -p opencomp-core` and `cargo test -p opencomp-llm` pass, and a short real task finishes with `Done` with the typed text visible on screen.
 
 ## Step 7 — Safety limits
 
-Add this in `opencomp-agent` before longer tasks. No new dependencies.
+Follow this before longer tasks. No new dependencies.
 
 Create these files:
 
@@ -492,17 +234,19 @@ Declare `policy` from `src/lib.rs`.
 pub fn check(action: &Action, width: u32, height: u32) -> Result<(), OpenCompCoreError>
 ```
 
+Check the model action, before `scale_action`. `width` and `height` are `observation.width` and `observation.height`, the image the model saw.
+
 - For every point in `Click`, `DoubleClick`, `Move`, `Drag`, and `Release`, return `InvalidAction` when `x >= width` or `y >= height`.
 - For `Key`, return `InvalidAction` when the chord contains `Super` and `Char('q')` or `Char('Q')`.
 - Allow `Type`, `Scroll`, `Wait`, and `Done`.
 - Allow a `Key` chord that is a single key, or `Super` combined with one of `Char('c')`, `Char('v')`, `Char('a')`, `Char('t')`, `Char('w')`, `Tab`.
 - Any other chord is `InvalidAction`.
 
-Call `policy::check` in `Agent::run` after the model returns and before `computer.act`. On `Done`, return the result before the policy check. Log every refusal with `tracing::warn!` and return the error. Do not continue the loop after a refusal.
+Call `policy::check` in `Agent::run` after the model returns and before `scale_action`. On `Done`, return the result before the policy check. Log every refusal with `tracing::warn!` and return the error. Do not continue the loop after a refusal. Do not push a refused action onto `history`.
 
 ### `tests/policy.rs`
 
-A point with `x == width` is refused, and the fake computer from `tests/loop.rs` records nothing. Move the fake into `tests/common/mod.rs` if both test crates need it. Cargo integration tests do not share modules across files, so put the fake in `tests/common/mod.rs` and add `mod common;` at the top of `loop.rs` and `policy.rs`.
+A point with `x == width` is refused, and the fake computer records nothing. Move the fake into `tests/common/mod.rs` if both test crates need it. Cargo integration tests do not share modules across files, so put the fake in `tests/common/mod.rs` and add `mod common;` at the top of `loop.rs` and `policy.rs`.
 
 A `Super` + `Char('q')` chord is refused. A left click inside the screenshot is allowed.
 
@@ -510,7 +254,7 @@ A `Super` + `Char('q')` chord is refused. A left click inside the screenshot is 
 
 ## Step 8 — Browser
 
-Start `opencomp-browser` only after a desktop task succeeds with a real model.
+Follow this only after a desktop task succeeds with a real model.
 
 Add workspace dep `playwright-rs` to `crates/opencomp-browser/Cargo.toml`.
 
@@ -526,8 +270,8 @@ crates/opencomp-browser/tests/session.rs
 
 Implement `Computer` for a `Session` that owns a Playwright page.
 
-- `screenshot` uses the page screenshot, and sets `width` and `height` from the viewport.
-- `act` uses the page mouse and keyboard for the same `Action` variants as `Desktop`.
+- `screenshot` uses the page screenshot. Set `width` and `height` from the PNG the model will see, and `screen_width` and `screen_height` from the viewport. If you sample it down the way `Desktop` does, the PNG stays at most 1280 on the long side. If the PNG is the viewport, the two sizes are equal.
+- `act` uses the page mouse and keyboard for the same `Action` variants as `Desktop`, including `Release`. Points passed to `act` are viewport pixels, because `Agent::run` has already scaled them.
 - `Done` returns `InvalidAction`.
 
 Pixel actions stay on the `Computer` trait, so `Agent` does not change. Add `crates/opencomp-core/src/browser.rs` and a `Browser` trait only if you replace coordinates with locators. Export it from `lib.rs` if you add it.
@@ -546,7 +290,7 @@ Add `--computer` to the `Run` command in `src/cli.rs`, with values `desktop` (de
 
 ## Step 9 — OCR
 
-Add this only when a model cannot read the screenshot. No action types change.
+Do not start this with Step 6. Add it only when a model cannot read the screenshot. No action types change.
 
 Add workspace dep `leptess` to `crates/opencomp-vision`. `leptess` needs Tesseract installed on the machine.
 
@@ -571,7 +315,7 @@ pub struct TextBlock {
 pub fn read(png: &[u8]) -> Result<Vec<TextBlock>, OpenCompCoreError>
 ```
 
-Re-export `read` and `TextBlock` from `src/lib.rs`. Write the PNG to a tempfile, run Tesseract, and return one block per recognized word or line. Coordinates are in the image that was passed in. The caller scales them with `to_screen` if that image is the resized screenshot.
+Re-export `read` and `TextBlock` from `src/lib.rs`. Write the PNG to a tempfile, run Tesseract, and return one block per recognized word or line. Coordinates are in the image that was passed in. That image is the model PNG, so scale the blocks with `to_screen` before using them as capture pixels.
 
 `tests/ocr.rs` can be `#[ignore]` unless Tesseract is installed. Feed it a PNG with a known word and assert that word appears in some block.
 
@@ -582,5 +326,5 @@ The agent does not call `read` until you decide the model needs the text. When y
 - `cargo test --workspace` passes.
 - `opencomp run --model scripted` finishes on a machine with no API key.
 - `opencomp run --model anthropic` completes one desktop task you can see.
-- A point outside the screenshot is refused.
+- A point outside the model image is refused.
 - `opencomp-browser` is still unused by the CLI until Step 8.

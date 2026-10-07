@@ -1,5 +1,6 @@
 use opencomp_core::action::{Action, MouseButton, Point};
 
+/// Points are pixels in the model screenshot. `Agent::run` scales them to the capture.
 pub fn script() -> Vec<Action> {
     vec![
         Action::Move(Point { x: 10, y: 10 }),

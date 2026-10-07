@@ -185,17 +185,22 @@ fn change_sample(src: &image::RgbaImage) -> Vec<u8> {
 }
 
 fn encode_png(image: &image::RgbaImage) -> Result<Vec<u8>, image::ImageError> {
+    let raw = image.as_raw();
+    let mut rgb = Vec::with_capacity(raw.len() / 4 * 3);
+    for pixel in raw.chunks_exact(4) {
+        rgb.extend_from_slice(&pixel[..3]);
+    }
     let mut png = std::io::Cursor::new(Vec::new());
     image::codecs::png::PngEncoder::new_with_quality(
         &mut png,
         image::codecs::png::CompressionType::Fast,
-        image::codecs::png::FilterType::NoFilter,
+        image::codecs::png::FilterType::Sub,
     )
     .write_image(
-        image.as_raw(),
+        &rgb,
         image.width(),
         image.height(),
-        image::ExtendedColorType::Rgba8,
+        image::ExtendedColorType::Rgb8,
     )?;
     Ok(png.into_inner())
 }
@@ -221,5 +226,21 @@ mod tests {
         let dst = downsample(&src, 2, 1);
         assert_eq!(dst.get_pixel(0, 0).0, [255, 0, 0, 255]);
         assert_eq!(dst.get_pixel(1, 0).0, [0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn encode_png_is_a_png_smaller_than_the_raw_frame() {
+        let (width, height) = model_size(3024, 1964);
+        let mut image = image::RgbaImage::new(width, height);
+        for (x, y, pixel) in image.enumerate_pixels_mut() {
+            *pixel = image::Rgba([(x % 64) as u8, (y % 64) as u8, 40, 255]);
+        }
+        let png = super::encode_png(&image).unwrap();
+        assert_eq!(&png[..8], b"\x89PNG\r\n\x1a\n");
+        assert!(
+            png.len() < (width as usize) * (height as usize),
+            "png was {} bytes",
+            png.len()
+        );
     }
 }
