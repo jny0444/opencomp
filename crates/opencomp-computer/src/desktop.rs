@@ -29,7 +29,7 @@ impl Desktop {
             .map_err(|e| OpenCompCoreError::Computer(e.to_string()))?;
 
         Ok(Self {
-            enigo: enigo,
+            enigo,
             scale_factor: 0.0,
             monitor: None,
             frame: None,
@@ -105,8 +105,8 @@ impl Computer for Desktop {
         let screen_width = image.width();
         let screen_height = image.height();
         let sample = change_sample(&image);
-        if let Some(frame) = &self.frame {
-            if frame.sample == sample
+        if let Some(frame) = &self.frame
+            && frame.sample == sample
                 && frame.screen_width == screen_width
                 && frame.screen_height == screen_height
             {
@@ -118,7 +118,6 @@ impl Computer for Desktop {
                     screen_height,
                 });
             }
-        }
 
         let (width, height) = model_size(screen_width, screen_height);
         let model_image = if width == screen_width && height == screen_height {
@@ -187,7 +186,7 @@ fn change_sample(src: &image::RgbaImage) -> Vec<u8> {
 fn encode_png(image: &image::RgbaImage) -> Result<Vec<u8>, image::ImageError> {
     let raw = image.as_raw();
     let mut rgb = Vec::with_capacity(raw.len() / 4 * 3);
-    for pixel in raw.chunks_exact(4) {
+    for pixel in raw.as_chunks::<4>().0 {
         rgb.extend_from_slice(&pixel[..3]);
     }
     let mut png = std::io::Cursor::new(Vec::new());

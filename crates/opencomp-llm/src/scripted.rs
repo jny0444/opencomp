@@ -16,9 +16,9 @@ impl ScriptedModel {
 impl Model for ScriptedModel {
     async fn next_action(
         &mut self,
-        task: &str,
-        observation: &opencomp_core::observation::Observation,
-        history: &[Action],
+        _task: &str,
+        _observation: &opencomp_core::observation::Observation,
+        _history: &[Action],
     ) -> Result<opencomp_core::model::Turn, opencomp_core::error::OpenCompCoreError> {
         if self.actions.is_empty() {
             return Err(opencomp_core::error::OpenCompCoreError::Model(
