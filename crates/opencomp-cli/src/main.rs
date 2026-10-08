@@ -8,7 +8,9 @@ use opencomp_browser::Session;
 use opencomp_computer::Desktop;
 use opencomp_core::computer::Computer;
 use opencomp_core::error::OpenCompCoreError;
-use opencomp_llm::{AnthropicModel, GroqModel, OpenRouterModel, ScriptedModel};
+use opencomp_llm::{
+    AgentRouterModel, AnthropicModel, GroqModel, OpenRouterModel, ScriptedModel,
+};
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
@@ -88,9 +90,21 @@ async fn run<C: Computer>(
             );
             agent.run(task).await
         }
+        "agentrouter" => {
+            dotenvy::dotenv().ok();
+            let api_key = require_env("AGENTROUTER_API_KEY");
+            let model_name =
+                std::env::var("AGENTROUTER_MODEL").unwrap_or_else(|_| "gpt-4o".to_owned());
+            let mut agent = Agent::new(
+                computer,
+                AgentRouterModel::new(api_key, model_name),
+                max_steps,
+            );
+            agent.run(task).await
+        }
         _ => {
             eprintln!(
-                "unknown model `{model}`; expected `scripted`, `anthropic`, `groq`, or `openrouter`"
+                "unknown model `{model}`; expected `scripted`, `anthropic`, `groq`, `openrouter`, or `agentrouter`"
             );
             std::process::exit(1);
         }

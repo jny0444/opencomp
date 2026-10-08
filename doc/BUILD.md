@@ -201,7 +201,7 @@ Use `wiremock` to stand up a fake Anthropic response whose text is `{"Done":{"re
 
 Add `dotenvy` to `opencomp-cli`. Do not add `opencomp-vision` for this step.
 
-In `src/cli.rs`, accept `--model anthropic`, `groq`, and `openrouter` as well as `scripted`.
+In `src/cli.rs`, accept `--model anthropic`, `groq`, `openrouter`, and `agentrouter` as well as `scripted`.
 
 In `src/main.rs`:
 
@@ -209,7 +209,8 @@ In `src/main.rs`:
 2. `anthropic` reads `ANTHROPIC_API_KEY` and optional `ANTHROPIC_MODEL` (default `claude-sonnet-4-5`).
 3. `groq` reads `GROQ_API_KEY` and optional `GROQ_MODEL` (default `qwen/qwen3.8-27b`, which can see images) and calls the Groq chat completions API.
 4. `openrouter` reads `OPENROUTER_API_KEY` and optional `OPENROUTER_MODEL` (default `qwen/qwen3.8-27b`).
-5. A missing key is a startup error. `Agent::run` scales the action before `act`. Anthropic receives `observation.png`. Groq and OpenRouter re-encode that PNG as JPEG, starting at quality 75 and stepping down to 60 and 45 while the file is over 700KB, because OpenRouter rejects the uncompressed PNG with HTTP 413. The JPEG keeps the PNG's width and height.
+5. `agentrouter` reads `AGENTROUTER_API_KEY` and optional `AGENTROUTER_MODEL` (default `gpt-4o`, which can see images) and calls `https://agentrouter.org/v1/chat/completions`. Its client sends `User-Agent: claude-cli/1.0.0 (external, cli)`, because AgentRouter rejects a generic client with HTTP 401 `unauthorized client detected`.
+6. A missing key is a startup error. `Agent::run` scales the action before `act`. Anthropic receives `observation.png`. Groq, OpenRouter, and AgentRouter re-encode that PNG as JPEG, starting at quality 75 and stepping down to 60 and 45 while the file is over 700KB. The JPEG keeps the PNG's width and height.
 
 The scripted path uses the same `run`. Its demo points are PNG pixels, and `run` scales those too.
 
