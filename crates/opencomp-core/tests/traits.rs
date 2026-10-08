@@ -47,6 +47,7 @@ impl Model for ScriptedModel {
             .ok_or_else(|| OpenCompCoreError::Model("no scripted action left".to_owned()))?;
         Ok(Turn {
             action,
+            follow: Vec::new(),
             reasoning: None,
             output_bytes: 0,
             output_tokens: None,

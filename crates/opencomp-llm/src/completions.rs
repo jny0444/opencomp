@@ -5,6 +5,7 @@ use opencomp_core::{
 };
 use serde::Deserialize;
 
+use crate::completer::Reply;
 use crate::prompt;
 
 pub(crate) struct Endpoint {
@@ -21,10 +22,26 @@ pub(crate) async fn next_action(
     observation: &Observation,
     history: &[Action],
 ) -> Result<Turn, OpenCompCoreError> {
+    let text = prompt::user_text(task, observation.width, observation.height, history)?;
+    let reply = complete(endpoint, &text, Some(&observation.png)).await?;
+    Ok(Turn {
+        action: prompt::parse_action(&reply.text)?,
+        follow: Vec::new(),
+        reasoning: None,
+        output_bytes: reply.output_bytes,
+        output_tokens: reply.output_tokens,
+    })
+}
+
+pub(crate) async fn complete(
+    endpoint: &Endpoint,
+    text: &str,
+    png: Option<&[u8]>,
+) -> Result<Reply, OpenCompCoreError> {
     let mut last_error = None;
     for attempt in 0..2 {
-        match request_turn(endpoint, task, observation, history).await {
-            Ok(turn) => return Ok(turn),
+        match post_chat(endpoint, text, png).await {
+            Ok(reply) => return Ok(reply),
             Err(error) if attempt == 0 && empty_reply(&error) => {
                 tracing::warn!(
                     provider = endpoint.name,
@@ -39,31 +56,34 @@ pub(crate) async fn next_action(
     Err(last_error.expect("empty reply was recorded"))
 }
 
+fn has_plan(text: &str) -> bool {
+    text.contains("\"subgoal\"") || text.contains("\"actions\"") || text.contains("\"Done\"")
+}
+
 fn empty_reply(error: &OpenCompCoreError) -> bool {
     let message = error.to_string();
     message.contains("returned an empty body") || message.contains("response had no text")
 }
 
-async fn request_turn(
+async fn post_chat(
     endpoint: &Endpoint,
-    task: &str,
-    observation: &Observation,
-    history: &[Action],
-) -> Result<Turn, OpenCompCoreError> {
-    let text = prompt::user_text(task, observation.width, observation.height, history)?;
-    let image = image_data_url(&observation.png)?;
+    text: &str,
+    png: Option<&[u8]>,
+) -> Result<Reply, OpenCompCoreError> {
+    let mut content = vec![serde_json::json!({ "type": "text", "text": text })];
+    if let Some(png) = png {
+        let image = image_data_url(png)?;
+        content.push(serde_json::json!({
+            "type": "image_url",
+            "image_url": { "url": image }
+        }));
+    }
     let body = serde_json::json!({
         "model": endpoint.model,
-        "max_tokens": 1024,
+        "max_tokens": 4096,
         "messages": [{
             "role": "user",
-            "content": [
-                { "type": "text", "text": text },
-                {
-                    "type": "image_url",
-                    "image_url": { "url": image }
-                }
-            ]
+            "content": content
         }]
     });
 
@@ -99,16 +119,18 @@ async fn request_turn(
     if let Some(message) = payload.error_message() {
         return Err(OpenCompCoreError::Model(message));
     }
-    let text = payload.text().ok_or_else(|| {
-        OpenCompCoreError::Model(format!("{} response had no text", endpoint.name))
-    })?;
+    let text = payload
+        .text()
+        .filter(|text| !text.trim().is_empty())
+        .ok_or_else(|| {
+            OpenCompCoreError::Model(format!("{} response had no text", endpoint.name))
+        })?;
     let output_tokens = payload
         .usage
         .as_ref()
         .and_then(|usage| usage.completion_tokens);
-    Ok(Turn {
-        action: prompt::parse_action(text)?,
-        reasoning: None,
+    Ok(Reply {
+        text: text.to_owned(),
         output_bytes: body.len(),
         output_tokens,
     })
@@ -218,14 +240,22 @@ impl ChatResponse {
 
     fn text(&self) -> Option<&str> {
         let message = &self.choices.first()?.message;
-        let content = message.content.as_ref().and_then(MessageContent::text);
-        if let Some(text) = content.filter(|text| !text.trim().is_empty()) {
-            return Some(text);
-        }
-        message
+        let content = message
+            .content
+            .as_ref()
+            .and_then(MessageContent::text)
+            .filter(|text| !text.trim().is_empty());
+        let reasoning = message
             .reasoning_content
             .as_deref()
-            .filter(|text| !text.trim().is_empty())
+            .filter(|text| !text.trim().is_empty());
+        match (content, reasoning) {
+            (Some(content), Some(reasoning)) if !has_plan(content) && has_plan(reasoning) => {
+                Some(reasoning)
+            }
+            (Some(content), _) => Some(content),
+            (None, reasoning) => reasoning,
+        }
     }
 }
 
@@ -286,5 +316,17 @@ mod tests {
         )
         .unwrap();
         assert_eq!(payload.text(), Some("{\"Done\":{\"result\":\"ok\"}}"));
+    }
+
+    #[test]
+    fn reasoning_content_is_used_when_it_holds_the_plan() {
+        let payload: super::ChatResponse = serde_json::from_str(
+            r#"{"choices":[{"message":{"content":"thinking about the screen","reasoning_content":"{\"subgoal\":\"spotlight\",\"actions\":[]}"}}]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            payload.text(),
+            Some("{\"subgoal\":\"spotlight\",\"actions\":[]}")
+        );
     }
 }

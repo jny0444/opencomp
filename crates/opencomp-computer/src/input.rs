@@ -6,108 +6,68 @@ use opencomp_core::{
     error::OpenCompCoreError,
 };
 
+#[derive(Clone, Copy)]
+pub(crate) struct Aim {
+    pub scale_factor: f32,
+    pub origin_x: i32,
+    pub origin_y: i32,
+}
+
 pub(crate) fn click(
     enigo: &mut enigo::Enigo,
     point: Point,
     button: MouseButton,
-    scale_factor: f32,
+    aim: Aim,
 ) -> Result<(), OpenCompCoreError> {
-    let (x, y) = to_point(point, scale_factor);
-    let enigo_button = to_button(button);
-
-    enigo
-        .move_mouse(x, y, enigo::Coordinate::Abs)
-        .map_err(|e| OpenCompCoreError::Computer(e.to_string()))?;
-
-    enigo
-        .button(enigo_button, enigo::Direction::Click)
-        .map_err(|e| OpenCompCoreError::Computer(e.to_string()))?;
-
-    Ok(())
+    let (x, y) = to_point(point, aim);
+    crate::pointer::click(enigo, x, y, to_pointer_button(button))
 }
 
 pub(crate) fn double_click(
     enigo: &mut enigo::Enigo,
     point: Point,
-    scale_factor: f32,
+    aim: Aim,
 ) -> Result<(), OpenCompCoreError> {
-    let (x, y) = to_point(point, scale_factor);
-    let enigo_button = enigo::Button::Left;
-
-    enigo
-        .move_mouse(x, y, enigo::Coordinate::Abs)
-        .map_err(|e| OpenCompCoreError::Computer(e.to_string()))?;
-
-    enigo
-        .button(enigo_button, enigo::Direction::Click)
-        .map_err(|e| OpenCompCoreError::Computer(e.to_string()))?;
-    enigo
-        .button(enigo_button, enigo::Direction::Click)
-        .map_err(|e| OpenCompCoreError::Computer(e.to_string()))?;
-
-    Ok(())
+    let (x, y) = to_point(point, aim);
+    crate::pointer::double_click(enigo, x, y)
 }
 
 pub(crate) fn move_to(
     enigo: &mut enigo::Enigo,
     point: Point,
-    scale_factor: f32,
+    aim: Aim,
 ) -> Result<(), OpenCompCoreError> {
-    let (x, y) = to_point(point, scale_factor);
+    let (x, y) = to_point(point, aim);
+    crate::pointer::move_to(enigo, x, y)
+}
 
-    enigo
-        .move_mouse(x, y, enigo::Coordinate::Abs)
-        .map_err(|e| OpenCompCoreError::Computer(e.to_string()))?;
-
-    Ok(())
+pub(crate) fn move_screen(
+    enigo: &mut enigo::Enigo,
+    x: i32,
+    y: i32,
+) -> Result<(), OpenCompCoreError> {
+    crate::pointer::move_to(enigo, x, y)
 }
 
 pub(crate) fn drag(
     enigo: &mut enigo::Enigo,
     from: Point,
     to: Point,
-    scale_factor: f32,
+    aim: Aim,
 ) -> Result<(), OpenCompCoreError> {
-    let (from_x, from_y) = to_point(from, scale_factor);
-    let (to_x, to_y) = to_point(to, scale_factor);
-
-    enigo
-        .move_mouse(from_x, from_y, enigo::Coordinate::Abs)
-        .map_err(|e| OpenCompCoreError::Computer(e.to_string()))?;
-
-    enigo
-        .button(enigo::Button::Left, enigo::Direction::Press)
-        .map_err(|e| OpenCompCoreError::Computer(e.to_string()))?;
-
-    enigo
-        .move_mouse(to_x, to_y, enigo::Coordinate::Abs)
-        .map_err(|e| OpenCompCoreError::Computer(e.to_string()))?;
-
-    enigo
-        .button(enigo::Button::Left, enigo::Direction::Release)
-        .map_err(|e| OpenCompCoreError::Computer(e.to_string()))?;
-
-    Ok(())
+    let (from_x, from_y) = to_point(from, aim);
+    let (to_x, to_y) = to_point(to, aim);
+    crate::pointer::drag(enigo, from_x, from_y, to_x, to_y)
 }
 
 pub(crate) fn release(
     enigo: &mut enigo::Enigo,
     point: Point,
     button: MouseButton,
-    scale_factor: f32,
+    aim: Aim,
 ) -> Result<(), OpenCompCoreError> {
-    let (x, y) = to_point(point, scale_factor);
-    let enigo_button = to_button(button);
-
-    enigo
-        .move_mouse(x, y, enigo::Coordinate::Abs)
-        .map_err(|e| OpenCompCoreError::Computer(e.to_string()))?;
-
-    enigo
-        .button(enigo_button, enigo::Direction::Release)
-        .map_err(|e| OpenCompCoreError::Computer(e.to_string()))?;
-
-    Ok(())
+    let (x, y) = to_point(point, aim);
+    crate::pointer::release(enigo, x, y, to_pointer_button(button))
 }
 
 pub(crate) fn type_text(enigo: &mut enigo::Enigo, text: &str) -> Result<(), OpenCompCoreError> {
@@ -126,7 +86,10 @@ pub(crate) fn press_keys(enigo: &mut enigo::Enigo, keys: &[Key]) -> Result<(), O
     }
     for key in keys.iter().rev() {
         enigo
-            .key(crate::keys::to_enigo(key.clone()), enigo::Direction::Release)
+            .key(
+                crate::keys::to_enigo(key.clone()),
+                enigo::Direction::Release,
+            )
             .map_err(|e| OpenCompCoreError::Computer(e.to_string()))?;
     }
 
@@ -152,22 +115,42 @@ pub(crate) fn wait(millis: u64) {
     std::thread::sleep(Duration::from_millis(millis));
 }
 
-fn to_button(button: MouseButton) -> enigo::Button {
+fn to_pointer_button(button: MouseButton) -> crate::pointer::Button {
     match button {
-        MouseButton::Left => enigo::Button::Left,
-        MouseButton::Middle => enigo::Button::Middle,
-        MouseButton::Right => enigo::Button::Right,
+        MouseButton::Left => crate::pointer::Button::Left,
+        MouseButton::Middle => crate::pointer::Button::Middle,
+        MouseButton::Right => crate::pointer::Button::Right,
     }
 }
 
-fn to_point(point: Point, scale_factor: f32) -> (i32, i32) {
-    let scale = if scale_factor > 0.0 {
-        scale_factor
+fn to_point(point: Point, aim: Aim) -> (i32, i32) {
+    let scale = if aim.scale_factor > 0.0 {
+        aim.scale_factor
     } else {
         1.0
     };
     (
-        (point.x as f32 / scale).round() as i32,
-        (point.y as f32 / scale).round() as i32,
+        (point.x as f32 / scale).round() as i32 + aim.origin_x,
+        (point.y as f32 / scale).round() as i32 + aim.origin_y,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use opencomp_core::action::Point;
+
+    use super::{Aim, to_point};
+
+    #[test]
+    fn a_window_origin_is_added_in_screen_points() {
+        let point = to_point(
+            Point { x: 28, y: 40 },
+            Aim {
+                scale_factor: 2.0,
+                origin_x: 100,
+                origin_y: 200,
+            },
+        );
+        assert_eq!(point, (114, 220));
+    }
 }

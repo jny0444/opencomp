@@ -7,6 +7,7 @@ use opencomp_core::{
 };
 use serde::Deserialize;
 
+use crate::completer::{Completer, Reply};
 use crate::prompt;
 
 const ANTHROPIC_URL: &str = "https://api.anthropic.com";
@@ -42,23 +43,48 @@ impl Model for AnthropicModel {
         history: &[Action],
     ) -> Result<Turn, OpenCompCoreError> {
         let text = prompt::user_text(task, observation.width, observation.height, history)?;
-        let png = base64::engine::general_purpose::STANDARD.encode(&observation.png);
+        let reply = self.reply(&text, Some(&observation.png)).await?;
+        Ok(Turn {
+            action: prompt::parse_action(&reply.text)?,
+            follow: Vec::new(),
+            reasoning: None,
+            output_bytes: reply.output_bytes,
+            output_tokens: reply.output_tokens,
+        })
+    }
+}
+
+impl Completer for AnthropicModel {
+    async fn complete(
+        &mut self,
+        text: &str,
+        png: Option<&[u8]>,
+    ) -> Result<Reply, OpenCompCoreError> {
+        self.reply(text, png).await
+    }
+}
+
+impl AnthropicModel {
+    async fn reply(&self, text: &str, png: Option<&[u8]>) -> Result<Reply, OpenCompCoreError> {
+        let mut content = Vec::new();
+        if let Some(png) = png {
+            let png = base64::engine::general_purpose::STANDARD.encode(png);
+            content.push(serde_json::json!({
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": "image/png",
+                    "data": png,
+                }
+            }));
+        }
+        content.push(serde_json::json!({ "type": "text", "text": text }));
         let body = serde_json::json!({
             "model": self.model,
             "max_tokens": 1024,
             "messages": [{
                 "role": "user",
-                "content": [
-                    {
-                        "type": "image",
-                        "source": {
-                            "type": "base64",
-                            "media_type": "image/png",
-                            "data": png,
-                        }
-                    },
-                    { "type": "text", "text": text }
-                ]
+                "content": content
             }]
         });
 
@@ -88,11 +114,10 @@ impl Model for AnthropicModel {
             .map_err(|error| OpenCompCoreError::Model(error.to_string()))?;
         let text = payload
             .text()
+            .filter(|text| !text.trim().is_empty())
             .ok_or_else(|| OpenCompCoreError::Model("anthropic response had no text".to_owned()))?;
-        let action = prompt::parse_action(text)?;
-        Ok(Turn {
-            action,
-            reasoning: None,
+        Ok(Reply {
+            text: text.to_owned(),
             output_bytes,
             output_tokens: payload.usage.map(|usage| usage.output_tokens),
         })

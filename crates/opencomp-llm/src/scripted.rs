@@ -32,6 +32,7 @@ impl Model for ScriptedModel {
             .unwrap_or(0);
         Ok(Turn {
             action,
+            follow: Vec::new(),
             reasoning: None,
             output_bytes,
             output_tokens: None,

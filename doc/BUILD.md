@@ -242,7 +242,7 @@ Check the model action, before `scale_action`. `width` and `height` are `observa
 - For every point in `Click`, `DoubleClick`, `Move`, `Drag`, and `Release`, return `InvalidAction` when `x >= width` or `y >= height`.
 - For `Key`, return `InvalidAction` when the chord contains `Super` and `Char('q')` or `Char('Q')`.
 - Allow `Type`, `Scroll`, `Wait`, and `Done`.
-- Allow a `Key` chord that is a single key, or `Super` combined with one of `Char('c')`, `Char('v')`, `Char('a')`, `Char('t')`, `Char('w')`, `Tab`.
+- Allow a `Key` chord that is a single key, or `Super` combined with one of `Char('c')`, `Char('v')`, `Char('a')`, `Char('t')`, `Char('w')`, `Char(' ')` (Spotlight), `Tab`.
 - Any other chord is `InvalidAction`.
 
 Call `policy::check` in `Agent::run` after the model returns and before `scale_action`. On `Done`, return the result before the policy check. Log every refusal with `tracing::warn!` and return the error. Do not continue the loop after a refusal. Do not push a refused action onto `history`.

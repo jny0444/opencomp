@@ -1,5 +1,6 @@
 mod cli;
 mod demo;
+mod spotlight;
 
 use clap::Parser;
 use cli::{Cli, Command};
@@ -9,7 +10,9 @@ use opencomp_computer::Desktop;
 use opencomp_core::computer::Computer;
 use opencomp_core::error::OpenCompCoreError;
 use opencomp_core::model::Model;
-use opencomp_llm::{AgentRouterModel, AnthropicModel, GroqModel, OpenRouterModel, ScriptedModel};
+use opencomp_llm::{
+    AgentRouterModel, AnthropicModel, GroqModel, OpenRouterModel, ScriptedModel, SplitModel,
+};
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
@@ -30,7 +33,16 @@ async fn main() {
 
     let result = match computer.as_str() {
         "desktop" => match Desktop::new() {
-            Ok(computer) => run(computer, &task, &model, max_steps).await,
+            Ok(mut computer) => {
+                let task = match spotlight::prepare(&mut computer, &task).await {
+                    Ok(task) => task,
+                    Err(error) => {
+                        report(Err(error));
+                        return;
+                    }
+                };
+                run(computer, &task, &model, max_steps).await
+            }
             Err(error) => Err(error),
         },
         "browser" => match Session::launch().await {
@@ -64,7 +76,11 @@ async fn run<C: Computer>(
                 std::env::var("ANTHROPIC_MODEL").unwrap_or_else(|_| "claude-sonnet-4-5".to_owned());
             let mut agent = measured(
                 computer,
-                AnthropicModel::new(api_key, model_name),
+                SplitModel::new(
+                    AnthropicModel::new(api_key.clone(), model_name.clone()),
+                    AnthropicModel::new(api_key, grounder_model(&model_name)),
+                    opencomp_vision::frame_hash,
+                ),
                 max_steps,
             );
             agent.run(task).await
@@ -74,7 +90,15 @@ async fn run<C: Computer>(
             let api_key = require_env("GROQ_API_KEY");
             let model_name =
                 std::env::var("GROQ_MODEL").unwrap_or_else(|_| "qwen/qwen3.8-27b".to_owned());
-            let mut agent = measured(computer, GroqModel::new(api_key, model_name), max_steps);
+            let mut agent = measured(
+                computer,
+                SplitModel::new(
+                    GroqModel::new(api_key.clone(), model_name.clone()),
+                    GroqModel::new(api_key, grounder_model(&model_name)),
+                    opencomp_vision::frame_hash,
+                ),
+                max_steps,
+            );
             agent.run(task).await
         }
         "openrouter" => {
@@ -84,7 +108,11 @@ async fn run<C: Computer>(
                 std::env::var("OPENROUTER_MODEL").unwrap_or_else(|_| "qwen/qwen3.8-27b".to_owned());
             let mut agent = measured(
                 computer,
-                OpenRouterModel::new(api_key, model_name),
+                SplitModel::new(
+                    OpenRouterModel::new(api_key.clone(), model_name.clone()),
+                    OpenRouterModel::new(api_key, grounder_model(&model_name)),
+                    opencomp_vision::frame_hash,
+                ),
                 max_steps,
             );
             agent.run(task).await
@@ -96,7 +124,11 @@ async fn run<C: Computer>(
                 std::env::var("AGENTROUTER_MODEL").unwrap_or_else(|_| "gpt-4o".to_owned());
             let mut agent = measured(
                 computer,
-                AgentRouterModel::new(api_key, model_name),
+                SplitModel::new(
+                    AgentRouterModel::new(api_key.clone(), model_name.clone()),
+                    AgentRouterModel::new(api_key, grounder_model(&model_name)),
+                    opencomp_vision::frame_hash,
+                ),
                 max_steps,
             );
             agent.run(task).await
@@ -107,6 +139,13 @@ async fn run<C: Computer>(
             );
             std::process::exit(1);
         }
+    }
+}
+
+fn grounder_model(planner: &str) -> String {
+    match std::env::var("GROUNDER_MODEL") {
+        Ok(value) if !value.is_empty() => value,
+        _ => planner.to_owned(),
     }
 }
 

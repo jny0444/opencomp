@@ -5,6 +5,7 @@ use opencomp_core::{
     observation::Observation,
 };
 
+use crate::completer::{Completer, Reply};
 use crate::completions::{self, Endpoint};
 
 const AGENTROUTER_URL: &str = "https://agentrouter.org";
@@ -41,6 +42,16 @@ impl Model for AgentRouterModel {
         history: &[Action],
     ) -> Result<Turn, OpenCompCoreError> {
         completions::next_action(&self.endpoint, task, observation, history).await
+    }
+}
+
+impl Completer for AgentRouterModel {
+    async fn complete(
+        &mut self,
+        text: &str,
+        png: Option<&[u8]>,
+    ) -> Result<Reply, OpenCompCoreError> {
+        completions::complete(&self.endpoint, text, png).await
     }
 }
 

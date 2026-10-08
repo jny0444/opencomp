@@ -15,3 +15,4 @@ clap.workspace = true
 tokio.workspace = true
 tracing-subscriber.workspace = true
 dotenvy.workspace = true
+tracing.workspace = true

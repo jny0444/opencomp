@@ -1,4 +1,5 @@
 use opencomp_core::{action::Action, error::OpenCompCoreError};
+use serde::de::DeserializeOwned;
 
 pub fn instruction(task: &str, image_width: u32, image_height: u32) -> String {
     format!(
@@ -41,17 +42,21 @@ pub fn user_text(
 }
 
 pub fn parse_action(text: &str) -> Result<Action, OpenCompCoreError> {
+    parse_json(text)
+}
+
+pub fn parse_json<T: DeserializeOwned>(text: &str) -> Result<T, OpenCompCoreError> {
     let text = strip_fence(text.trim());
     if text.is_empty() {
         return Err(OpenCompCoreError::Model("response had no text".to_owned()));
     }
     match serde_json::from_str(text) {
-        Ok(action) => Ok(action),
-        Err(error) => last_action(text).ok_or_else(|| OpenCompCoreError::Model(error.to_string())),
+        Ok(value) => Ok(value),
+        Err(error) => last_json(text).ok_or_else(|| OpenCompCoreError::Model(error.to_string())),
     }
 }
 
-fn last_action(text: &str) -> Option<Action> {
+fn last_json<T: DeserializeOwned>(text: &str) -> Option<T> {
     let mut starts = text
         .match_indices('{')
         .map(|(index, _)| index)
@@ -61,8 +66,8 @@ fn last_action(text: &str) -> Option<Action> {
         let Some(object) = json_object_at(text, start) else {
             continue;
         };
-        if let Ok(action) = serde_json::from_str(object) {
-            return Some(action);
+        if let Ok(value) = serde_json::from_str(object) {
+            return Some(value);
         }
     }
     None

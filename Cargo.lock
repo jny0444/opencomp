@@ -2177,6 +2177,7 @@ dependencies = [
  "opencomp-llm",
  "opencomp-vision",
  "tokio",
+ "tracing",
  "tracing-subscriber",
 ]
 
@@ -2184,10 +2185,12 @@ dependencies = [
 name = "opencomp-computer"
 version = "0.1.0"
 dependencies = [
+ "core-graphics",
  "enigo",
  "image",
  "opencomp-core",
  "tokio",
+ "tracing",
  "xcap",
 ]
 

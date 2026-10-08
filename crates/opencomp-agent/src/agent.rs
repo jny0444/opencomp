@@ -42,7 +42,6 @@ impl<C: Computer, M: Model> Agent<C, M> {
                 )));
             }
 
-            let step = history.len() + 1;
             let started = Instant::now();
             let observation = self
                 .computer
@@ -57,69 +56,95 @@ impl<C: Computer, M: Model> Agent<C, M> {
             let model_ms = started.elapsed().as_millis();
 
             let action = turn.action;
-            if let Action::Done { result } = &action {
-                log_step(
-                    step,
-                    &observation,
-                    capture_ms,
-                    model_ms,
-                    0,
-                    false,
-                    &action,
-                    turn.output_bytes,
-                    turn.output_tokens,
-                );
-                return Ok(result.clone());
-            }
-            if let Err(error) = policy::check(&action, observation.width, observation.height) {
-                tracing::warn!(
-                    step,
-                    action = ?action,
-                    %error,
-                    "refused action"
-                );
-                log_step(
-                    step,
-                    &observation,
-                    capture_ms,
-                    model_ms,
-                    0,
-                    false,
-                    &action,
-                    turn.output_bytes,
-                    turn.output_tokens,
-                );
-                return Err(error);
-            }
-            history.push(action.clone());
-            let scaled = opencomp_core::scale::scale_action(
-                &action,
-                observation.width,
-                observation.height,
-                observation.screen_width,
-                observation.screen_height,
-            );
-            let started = Instant::now();
-            self.computer.act(&scaled).await?;
-            let act_ms = started.elapsed().as_millis();
-            let frame_changed = match self.computer.screenshot().await {
-                Ok(after) => (self.frame_hash)(&after.png) != before,
-                Err(error) => {
-                    tracing::warn!(step, %error, "could not hash the frame after act");
-                    false
+            let follow = turn.follow;
+            let mut grouped = Vec::with_capacity(1 + follow.len());
+            grouped.push(action);
+            grouped.extend(follow);
+            let bundled = grouped.len() > 1;
+            let group_len = grouped.len();
+            for (offset, action) in grouped.into_iter().enumerate() {
+                if history.len() >= self.max_steps {
+                    return Err(OpenCompCoreError::Model(format!(
+                        "step limit of {} was hit",
+                        self.max_steps
+                    )));
                 }
-            };
-            log_step(
-                step,
-                &observation,
-                capture_ms,
-                model_ms,
-                act_ms,
-                frame_changed,
-                &action,
-                turn.output_bytes,
-                turn.output_tokens,
-            );
+                let step = history.len() + 1;
+                let step_capture_ms = if offset == 0 { capture_ms } else { 0 };
+                let step_model_ms = if offset == 0 { model_ms } else { 0 };
+                if let Action::Done { result } = &action {
+                    log_step(
+                        step,
+                        &observation,
+                        step_capture_ms,
+                        step_model_ms,
+                        0,
+                        false,
+                        &action,
+                        turn.output_bytes,
+                        turn.output_tokens,
+                    );
+                    return Ok(result.clone());
+                }
+                if let Err(error) = policy::check(&action, observation.width, observation.height) {
+                    tracing::warn!(
+                        step,
+                        action = ?action,
+                        %error,
+                        "refused action"
+                    );
+                    log_step(
+                        step,
+                        &observation,
+                        step_capture_ms,
+                        step_model_ms,
+                        0,
+                        false,
+                        &action,
+                        turn.output_bytes,
+                        turn.output_tokens,
+                    );
+                    return Err(error);
+                }
+                history.push(action.clone());
+                let scaled = opencomp_core::scale::scale_action(
+                    &action,
+                    observation.width,
+                    observation.height,
+                    observation.screen_width,
+                    observation.screen_height,
+                );
+                let started = Instant::now();
+                self.computer.act(&scaled).await?;
+                let act_ms = started.elapsed().as_millis();
+                let last = offset + 1 == group_len;
+                let frame_changed = if last && !bundled {
+                    match self.computer.screenshot().await {
+                        Ok(after) => (self.frame_hash)(&after.png) != before,
+                        Err(error) => {
+                            tracing::warn!(step, %error, "could not hash the frame after act");
+                            false
+                        }
+                    }
+                } else {
+                    false
+                };
+                log_step(
+                    step,
+                    &observation,
+                    step_capture_ms,
+                    step_model_ms,
+                    act_ms,
+                    frame_changed,
+                    &action,
+                    if offset == 0 { turn.output_bytes } else { 0 },
+                    if offset == 0 {
+                        turn.output_tokens
+                    } else {
+                        None
+                    },
+                );
+            }
         }
     }
 }

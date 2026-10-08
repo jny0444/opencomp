@@ -51,5 +51,5 @@ fn is_super_shortcut(keys: &[Key]) -> bool {
         return false;
     }
     keys.iter()
-        .any(|key| matches!(key, Key::Char('c' | 'v' | 'a' | 't' | 'w') | Key::Tab))
+        .any(|key| matches!(key, Key::Char('c' | 'v' | 'a' | 't' | 'w' | ' ') | Key::Tab))
 }

@@ -3,6 +3,7 @@ use crate::{action::Action, error::OpenCompCoreError, observation::Observation};
 #[derive(Debug)]
 pub struct Turn {
     pub action: Action,
+    pub follow: Vec<Action>,
     pub reasoning: Option<String>,
     pub output_bytes: usize,
     pub output_tokens: Option<u32>,

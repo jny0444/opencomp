@@ -5,6 +5,7 @@ use opencomp_core::{
     observation::Observation,
 };
 
+use crate::completer::{Completer, Reply};
 use crate::completions::{self, Endpoint};
 
 const GROQ_URL: &str = "https://api.groq.com/openai";
@@ -40,5 +41,15 @@ impl Model for GroqModel {
         history: &[Action],
     ) -> Result<Turn, OpenCompCoreError> {
         completions::next_action(&self.endpoint, task, observation, history).await
+    }
+}
+
+impl Completer for GroqModel {
+    async fn complete(
+        &mut self,
+        text: &str,
+        png: Option<&[u8]>,
+    ) -> Result<Reply, OpenCompCoreError> {
+        completions::complete(&self.endpoint, text, png).await
     }
 }

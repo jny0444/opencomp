@@ -123,6 +123,8 @@ Otherwise call the grounder.
 
 **Done when:** a multi-step desktop task shows a handful of planner calls and a grounder call per click, and the task still ends in `Done`.
 
+Done. `SplitModel` sits behind `Model`. The planner returns a subgoal and, when the next steps need no new screenshot, up to four `Type`, `Key`, `Scroll`, `Wait`, or `Done` actions. A click goes to the grounder with that phrase and the current frame. The planner runs at the start, after a grounded click lands, when the frame hash does not change, when the same subgoal fails twice, when the grounder declines, and once more when an empty subgoal has no key, type, scroll, or wait to run. A key chord with an empty subgoal still runs. The trace lines are `role=planner`, `role=grounder`, and `role=burst`. The CLI builds the split for every provider. `GROUNDER_MODEL` selects the grounder; otherwise it uses the planner's model. No on-device GUI model is wired in. `opencomp-agent` still depends only on `opencomp-core`.
+
 ## Step 6 — Speculate
 
 Do this last. After each executed action, a small model guesses the next action from the previous frame plus the action just taken. Compare that guess to a real decision on the new screenshot.

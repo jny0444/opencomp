@@ -76,11 +76,15 @@ fn super_shortcuts_and_single_keys_are_allowed() {
     let quit = Action::Key {
         keys: vec![Key::Char('q')],
     };
+    let spotlight = Action::Key {
+        keys: vec![Key::Super, Key::Char(' ')],
+    };
     let other = Action::Key {
         keys: vec![Key::Super, Key::Char('x')],
     };
 
     assert!(policy::check(&copy, 10, 10).is_ok());
     assert!(policy::check(&quit, 10, 10).is_ok());
+    assert!(policy::check(&spotlight, 10, 10).is_ok());
     assert!(policy::check(&other, 10, 10).is_err());
 }

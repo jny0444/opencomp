@@ -5,6 +5,7 @@ use opencomp_core::{
     observation::Observation,
 };
 
+use crate::completer::{Completer, Reply};
 use crate::completions::{self, Endpoint};
 
 const OPENROUTER_URL: &str = "https://openrouter.ai/api";
@@ -40,5 +41,15 @@ impl Model for OpenRouterModel {
         history: &[Action],
     ) -> Result<Turn, OpenCompCoreError> {
         completions::next_action(&self.endpoint, task, observation, history).await
+    }
+}
+
+impl Completer for OpenRouterModel {
+    async fn complete(
+        &mut self,
+        text: &str,
+        png: Option<&[u8]>,
+    ) -> Result<Reply, OpenCompCoreError> {
+        completions::complete(&self.endpoint, text, png).await
     }
 }
