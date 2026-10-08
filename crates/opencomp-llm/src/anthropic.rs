@@ -62,10 +62,7 @@ impl Model for AnthropicModel {
             }]
         });
 
-        let url = format!(
-            "{}/v1/messages",
-            self.base_url.trim_end_matches('/')
-        );
+        let url = format!("{}/v1/messages", self.base_url.trim_end_matches('/'));
         let response = self
             .client
             .post(url)
@@ -75,20 +72,29 @@ impl Model for AnthropicModel {
             .send()
             .await
             .map_err(|error| OpenCompCoreError::Model(error.to_string()))?;
-        let response = response
-            .error_for_status()
-            .map_err(|error| OpenCompCoreError::Model(error.to_string()))?;
-        let payload: MessagesResponse = response
-            .json()
+        let status = response.status();
+        let body = response
+            .text()
             .await
             .map_err(|error| OpenCompCoreError::Model(error.to_string()))?;
-        let text = payload.text().ok_or_else(|| {
-            OpenCompCoreError::Model("anthropic response had no text".to_owned())
-        })?;
+        if !status.is_success() {
+            return Err(OpenCompCoreError::Model(format!(
+                "HTTP {status}: {}",
+                body.trim()
+            )));
+        }
+        let output_bytes = body.len();
+        let payload: MessagesResponse = serde_json::from_str(&body)
+            .map_err(|error| OpenCompCoreError::Model(error.to_string()))?;
+        let text = payload
+            .text()
+            .ok_or_else(|| OpenCompCoreError::Model("anthropic response had no text".to_owned()))?;
         let action = prompt::parse_action(text)?;
         Ok(Turn {
             action,
             reasoning: None,
+            output_bytes,
+            output_tokens: payload.usage.map(|usage| usage.output_tokens),
         })
     }
 }
@@ -96,6 +102,12 @@ impl Model for AnthropicModel {
 #[derive(Deserialize)]
 struct MessagesResponse {
     content: Vec<ContentBlock>,
+    usage: Option<Usage>,
+}
+
+#[derive(Deserialize)]
+struct Usage {
+    output_tokens: u32,
 }
 
 #[derive(Deserialize)]

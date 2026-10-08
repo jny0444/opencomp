@@ -42,7 +42,63 @@ pub fn user_text(
 
 pub fn parse_action(text: &str) -> Result<Action, OpenCompCoreError> {
     let text = strip_fence(text.trim());
-    serde_json::from_str(text).map_err(|error| OpenCompCoreError::Model(error.to_string()))
+    if text.is_empty() {
+        return Err(OpenCompCoreError::Model("response had no text".to_owned()));
+    }
+    match serde_json::from_str(text) {
+        Ok(action) => Ok(action),
+        Err(error) => last_action(text).ok_or_else(|| OpenCompCoreError::Model(error.to_string())),
+    }
+}
+
+fn last_action(text: &str) -> Option<Action> {
+    let mut starts = text
+        .match_indices('{')
+        .map(|(index, _)| index)
+        .collect::<Vec<_>>();
+    starts.reverse();
+    for start in starts {
+        let Some(object) = json_object_at(text, start) else {
+            continue;
+        };
+        if let Ok(action) = serde_json::from_str(object) {
+            return Some(action);
+        }
+    }
+    None
+}
+
+fn json_object_at(text: &str, start: usize) -> Option<&str> {
+    let mut depth = 0;
+    let mut in_string = false;
+    let mut escape = false;
+    for (offset, ch) in text[start..].char_indices() {
+        if in_string {
+            if escape {
+                escape = false;
+            } else if ch == '\\' {
+                escape = true;
+            } else if ch == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+        match ch {
+            '"' => in_string = true,
+            '{' => depth += 1,
+            '}' => {
+                if depth == 0 {
+                    return None;
+                }
+                depth -= 1;
+                if depth == 0 {
+                    return Some(&text[start..start + offset + ch.len_utf8()]);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 #[cfg(test)]
@@ -56,6 +112,28 @@ mod tests {
         assert!(text.contains("{\"Done\":{\"result\":\"finished\"}}"));
         assert!(text.contains("Do not invent names"));
         assert!(text.contains("Done is a later reply"));
+    }
+
+    #[test]
+    fn an_empty_reply_is_not_an_action() {
+        let error = super::parse_action("  ").unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "Provider and Parse failure: `response had no text`"
+        );
+    }
+
+    #[test]
+    fn the_last_json_object_in_a_reply_is_the_action() {
+        let text = "The close button is at the left.\n{\"Click\":{\"point\":{\"x\":14,\"y\":46},\"button\":\"Left\"}}";
+        let action = super::parse_action(text).unwrap();
+        assert_eq!(
+            action,
+            opencomp_core::action::Action::Click {
+                point: opencomp_core::action::Point { x: 14, y: 46 },
+                button: opencomp_core::action::MouseButton::Left,
+            }
+        );
     }
 }
 

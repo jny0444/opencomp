@@ -10,6 +10,7 @@ opencomp-browser.workspace = true
 opencomp-computer.workspace = true
 opencomp-core.workspace = true
 opencomp-llm.workspace = true
+opencomp-vision.workspace = true
 clap.workspace = true
 tokio.workspace = true
 tracing-subscriber.workspace = true

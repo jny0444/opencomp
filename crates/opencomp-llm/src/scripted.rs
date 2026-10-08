@@ -27,9 +27,14 @@ impl Model for ScriptedModel {
         }
 
         let action = self.actions.remove(0);
+        let output_bytes = serde_json::to_string(&action)
+            .map(|text| text.len())
+            .unwrap_or(0);
         Ok(Turn {
             action,
             reasoning: None,
+            output_bytes,
+            output_tokens: None,
         })
     }
 }

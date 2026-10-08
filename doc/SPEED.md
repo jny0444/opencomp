@@ -42,6 +42,8 @@ Put the logs in `Agent::run` with `tracing`, around `screenshot`, `next_action`,
 
 **Done when:** one `anthropic` desktop task prints a line per step, and the model column is almost the whole sum. If it is not, fix that stage first and come back.
 
+Done. `Agent::run` logs one line per step: `capture_ms`, `image_bytes`, `width`, `height`, `model_ms`, `output_bytes`, `output_tokens` (`-` when the API sends none), `act_ms`, and `frame_changed`. `frame_changed` compares a 64×64 gray hash from `opencomp_vision::frame_hash` before and after `act`. The CLI passes that hash in, so `opencomp-agent` still depends only on `opencomp-core`.
+
 ## Step 2 — Starve the image
 
 The screenshot passed into `next_action` is the vision prefill. Make it small and send it once.

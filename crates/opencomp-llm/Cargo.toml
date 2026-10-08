@@ -11,6 +11,7 @@ serde_json.workspace = true
 base64.workspace = true
 serde.workspace = true
 image.workspace = true
+tracing.workspace = true
 
 [dev-dependencies]
 opencomp-core.workspace = true

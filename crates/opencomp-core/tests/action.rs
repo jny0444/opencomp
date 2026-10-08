@@ -77,10 +77,7 @@ fn release_round_trips_through_json() {
 
 #[test]
 fn type_round_trips_through_json() {
-    assert_round_trip(
-        &Action::Type("hello".to_owned()),
-        r#"{"Type":"hello"}"#,
-    );
+    assert_round_trip(&Action::Type("hello".to_owned()), r#"{"Type":"hello"}"#);
 }
 
 #[test]
@@ -103,10 +100,7 @@ fn scroll_keeps_negative_offsets() {
 
 #[test]
 fn wait_stores_milliseconds() {
-    assert_round_trip(
-        &Action::Wait { millis: 500 },
-        r#"{"Wait":{"millis":500}}"#,
-    );
+    assert_round_trip(&Action::Wait { millis: 500 }, r#"{"Wait":{"millis":500}}"#);
 }
 
 #[test]

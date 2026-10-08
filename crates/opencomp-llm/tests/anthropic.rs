@@ -24,13 +24,14 @@ async fn parses_a_done_action() {
             "content": [{
                 "type": "text",
                 "text": "{\"Done\":{\"result\":\"ok\"}}"
-            }]
+            }],
+            "usage": { "input_tokens": 12, "output_tokens": 7 }
         })))
         .mount(&server)
         .await;
 
-    let mut model = AnthropicModel::new("test-key".to_owned(), "claude".to_owned())
-        .with_base_url(server.uri());
+    let mut model =
+        AnthropicModel::new("test-key".to_owned(), "claude".to_owned()).with_base_url(server.uri());
     let turn = model
         .next_action("task", &observation(), &[])
         .await
@@ -43,6 +44,8 @@ async fn parses_a_done_action() {
         }
     );
     assert_eq!(turn.reasoning, None);
+    assert!(turn.output_bytes > 0);
+    assert_eq!(turn.output_tokens, Some(7));
 }
 
 #[tokio::test]
@@ -59,8 +62,8 @@ async fn rejects_a_body_that_is_not_json() {
         .mount(&server)
         .await;
 
-    let mut model = AnthropicModel::new("test-key".to_owned(), "claude".to_owned())
-        .with_base_url(server.uri());
+    let mut model =
+        AnthropicModel::new("test-key".to_owned(), "claude".to_owned()).with_base_url(server.uri());
     let error = model
         .next_action("task", &observation(), &[])
         .await

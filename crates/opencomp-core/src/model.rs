@@ -4,6 +4,8 @@ use crate::{action::Action, error::OpenCompCoreError, observation::Observation};
 pub struct Turn {
     pub action: Action,
     pub reasoning: Option<String>,
+    pub output_bytes: usize,
+    pub output_tokens: Option<u32>,
 }
 
 pub trait Model {

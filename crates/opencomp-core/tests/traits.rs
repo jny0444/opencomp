@@ -48,6 +48,8 @@ impl Model for ScriptedModel {
         Ok(Turn {
             action,
             reasoning: None,
+            output_bytes: 0,
+            output_tokens: None,
         })
     }
 }

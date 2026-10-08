@@ -1,10 +1,7 @@
 use base64::Engine;
 use image::ImageEncoder;
 use opencomp_core::{
-    action::Action,
-    error::OpenCompCoreError,
-    model::Turn,
-    observation::Observation,
+    action::Action, error::OpenCompCoreError, model::Turn, observation::Observation,
 };
 use serde::Deserialize;
 
@@ -19,6 +16,35 @@ pub(crate) struct Endpoint {
 }
 
 pub(crate) async fn next_action(
+    endpoint: &Endpoint,
+    task: &str,
+    observation: &Observation,
+    history: &[Action],
+) -> Result<Turn, OpenCompCoreError> {
+    let mut last_error = None;
+    for attempt in 0..2 {
+        match request_turn(endpoint, task, observation, history).await {
+            Ok(turn) => return Ok(turn),
+            Err(error) if attempt == 0 && empty_reply(&error) => {
+                tracing::warn!(
+                    provider = endpoint.name,
+                    %error,
+                    "empty model reply, retrying once"
+                );
+                last_error = Some(error);
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    Err(last_error.expect("empty reply was recorded"))
+}
+
+fn empty_reply(error: &OpenCompCoreError) -> bool {
+    let message = error.to_string();
+    message.contains("returned an empty body") || message.contains("response had no text")
+}
+
+async fn request_turn(
     endpoint: &Endpoint,
     task: &str,
     observation: &Observation,
@@ -62,17 +88,29 @@ pub(crate) async fn next_action(
     if !status.is_success() {
         return Err(OpenCompCoreError::Model(http_failure(status, &body)));
     }
-    let payload: ChatResponse = serde_json::from_str(&body)
-        .map_err(|error| OpenCompCoreError::Model(error.to_string()))?;
+    if body.trim().is_empty() {
+        return Err(OpenCompCoreError::Model(format!(
+            "{} returned an empty body (HTTP {status})",
+            endpoint.name
+        )));
+    }
+    let payload: ChatResponse =
+        serde_json::from_str(&body).map_err(|error| OpenCompCoreError::Model(error.to_string()))?;
     if let Some(message) = payload.error_message() {
         return Err(OpenCompCoreError::Model(message));
     }
     let text = payload.text().ok_or_else(|| {
         OpenCompCoreError::Model(format!("{} response had no text", endpoint.name))
     })?;
+    let output_tokens = payload
+        .usage
+        .as_ref()
+        .and_then(|usage| usage.completion_tokens);
     Ok(Turn {
         action: prompt::parse_action(text)?,
         reasoning: None,
+        output_bytes: body.len(),
+        output_tokens,
     })
 }
 
@@ -81,6 +119,12 @@ struct ChatResponse {
     #[serde(default)]
     choices: Vec<Choice>,
     error: Option<ProviderError>,
+    usage: Option<CompletionUsage>,
+}
+
+#[derive(Deserialize)]
+struct CompletionUsage {
+    completion_tokens: Option<u32>,
 }
 
 #[derive(Deserialize)]
@@ -110,6 +154,7 @@ struct Choice {
 #[derive(Deserialize)]
 struct AssistantMessage {
     content: Option<MessageContent>,
+    reasoning_content: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -172,8 +217,21 @@ impl ChatResponse {
     }
 
     fn text(&self) -> Option<&str> {
-        let content = self.choices.first()?.message.content.as_ref()?;
-        match content {
+        let message = &self.choices.first()?.message;
+        let content = message.content.as_ref().and_then(MessageContent::text);
+        if let Some(text) = content.filter(|text| !text.trim().is_empty()) {
+            return Some(text);
+        }
+        message
+            .reasoning_content
+            .as_deref()
+            .filter(|text| !text.trim().is_empty())
+    }
+}
+
+impl MessageContent {
+    fn text(&self) -> Option<&str> {
+        match self {
             MessageContent::Text(text) => Some(text.as_str()),
             MessageContent::Parts(parts) => parts.iter().find_map(|part| part.text.as_deref()),
         }
@@ -215,9 +273,18 @@ mod tests {
 
         let url = image_data_url(&png.into_inner()).unwrap();
         let encoded = url.strip_prefix("data:image/jpeg;base64,").unwrap();
-        let jpeg = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, encoded)
-            .unwrap();
+        let jpeg =
+            base64::Engine::decode(&base64::engine::general_purpose::STANDARD, encoded).unwrap();
         assert!(jpeg.len() <= super::JPEG_BYTE_BUDGET, "{}", jpeg.len());
         assert_eq!(&jpeg[..2], b"\xff\xd8");
+    }
+
+    #[test]
+    fn blank_content_uses_reasoning_content() {
+        let payload: super::ChatResponse = serde_json::from_str(
+            r#"{"choices":[{"message":{"content":"","reasoning_content":"{\"Done\":{\"result\":\"ok\"}}"}}]}"#,
+        )
+        .unwrap();
+        assert_eq!(payload.text(), Some("{\"Done\":{\"result\":\"ok\"}}"));
     }
 }

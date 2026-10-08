@@ -6,6 +6,7 @@ rust-version.workspace = true
 
 [dependencies]
 opencomp-core.workspace = true
+image.workspace = true
 leptess.workspace = true
 tempfile.workspace = true
 

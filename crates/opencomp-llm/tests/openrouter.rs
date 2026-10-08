@@ -38,9 +38,7 @@ async fn rejects_a_body_that_is_not_json() {
         .unwrap_err();
 
     assert!(
-        error
-            .to_string()
-            .starts_with("Provider and Parse failure:"),
+        error.to_string().starts_with("Provider and Parse failure:"),
         "{error}"
     );
 }
